@@ -1258,7 +1258,7 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
            coeff_shift;
           if (!mbctx->is_keyframe) {
 /* 1 for full precision, 0 for normal 8-bit precision. */
-#if 0
+#if 1
             state->mctmp[pli][y*w + x] = foobar[pli][y*ystride + x];
 #else
             state->mctmp[pli][y*w + x] = (mdata[ystride*y + x] - 128)
@@ -1314,7 +1314,6 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
     ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
-        foobar[pli][ystride*y + x] = state->ctmp[pli][y*w + x];
         data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
          + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
       }
@@ -1339,6 +1338,7 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
       ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
       for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
+          foobar[pli][ystride*y + x] = state->ctmp[pli][y*w + x];
           data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
            + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
         }
