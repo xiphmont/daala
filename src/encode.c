@@ -219,6 +219,8 @@ int daala_encode_ctl(daala_enc_ctx *enc, int req, void *buf, size_t buf_sz) {
   }
 }
 
+od_coeff foobar[3][2500000];
+
 void od_encode_checkpoint(const daala_enc_ctx *enc, od_rollback_buffer *rbuf) {
   od_ec_enc_checkpoint(&rbuf->ec, &enc->ec);
   OD_COPY(&rbuf->adapt, &enc->state.adapt, 1);
@@ -836,6 +838,13 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((2851196 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 56));
+  {
+    int i,j;
+    for(i = 0; i <= (enc->state.nvmbs + 1) << 2; i++)
+      for(j = 0; j <= (enc->state.nhmbs + 1) << 2; j++)
+        memset(&(enc->state.mv_grid[i][j]),0,sizeof(enc->state.mv_grid[i][j]));
+  }
+
   od_state_mc_predict(&enc->state, OD_FRAME_PREV);
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
@@ -1248,8 +1257,13 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
           state->ctmp[pli][y*w + x] = (data[ystride*y + x] - 128) <<
            coeff_shift;
           if (!mbctx->is_keyframe) {
+/* 1 for full precision, 0 for normal 8-bit precision. */
+#if 1
+            state->mctmp[pli][y*w + x] = foobar[pli][y*ystride + x];
+#else
             state->mctmp[pli][y*w + x] = (mdata[ystride*y + x] - 128)
              << coeff_shift;
+#endif
           }
         }
       }
@@ -1300,6 +1314,7 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
     ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
+        foobar[pli][ystride*y + x] = state->ctmp[pli][y*w + x];
         data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
          + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
       }
