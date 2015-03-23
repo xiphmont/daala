@@ -1258,7 +1258,7 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx) {
            coeff_shift;
           if (!mbctx->is_keyframe) {
 /* 1 for full precision, 0 for normal 8-bit precision. */
-#if 1
+#if 0
             state->mctmp[pli][y*w + x] = foobar[pli][y*ystride + x];
 #else
             state->mctmp[pli][y*w + x] = (mdata[ystride*y + x] - 128)
