@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 # define OD_LOG_MCBSIZE_MAX (4)
 # define OD_MCBSIZE_MAX (1 << OD_LOG_MCBSIZE_MAX)
 
-# define OD_LIMIT_BSIZE_MIN (OD_BLOCK_4X4)
+# define OD_LIMIT_BSIZE_MIN (OD_BLOCK_32X32)
 # define OD_LIMIT_BSIZE_MAX (OD_BLOCK_32X32)
 # if OD_LIMIT_BSIZE_MIN > OD_BLOCK_32X32 || OD_LIMIT_BSIZE_MAX > OD_BLOCK_32X32
 #  error "block sizes above 32x32 not supported"
@@ -67,6 +67,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 # define OD_ROBUST_STREAM (0)
 
 # define OD_COEFF_SHIFT (4)
+# define OD_REFERENCE_BITS (8)
+# define OD_REFERENCE_BYTES (1)
+typedef unsigned char od_reftype;
+
+# if (OD_REFERENCE_BYTES==1)
+#  define OD_CLAMPREF(x) (OD_CLAMP255(x))
+# else
+#  define OD_CLAMPREF(x) ((od_reftype)(OD_CLAMPI(-32768,(x),32767))
+#endif
+
 /*OD_QUALITY_SHIFT specifies the number of fractional bits in a
    passed in 'quality' parameter.
   For example, an OD_QUALITY_SHIFT of (4) specifies the quality parameter is

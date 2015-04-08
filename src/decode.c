@@ -693,21 +693,7 @@ static void od_decode_residual(od_dec_ctx *dec, od_mb_dec_ctx *mbctx) {
       ydec = state->io_imgs[OD_FRAME_REC].planes[pli].ydec;
       w = frame_width >> xdec;
       h = frame_height >> ydec;
-      /*Collect the image data needed for this plane.*/
-      {
-        unsigned char *mdata;
-        int ystride;
-        int coeff_shift;
-        coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
-        mdata = state->io_imgs[OD_FRAME_REC].planes[pli].data;
-        ystride = state->io_imgs[OD_FRAME_REC].planes[pli].ystride;
-        for (y = 0; y < h; y++) {
-          for (x = 0; x < w; x++) {
-            state->mctmp[pli][y*w + x] = (mdata[ystride*y + x] - 128)
-             << coeff_shift;
-          }
-        }
-      }
+      /* reference / motion compensated frame already staged */
 #if OD_DISABLE_FIXED_LAPPING
       /*Apply the prefilter across the entire image.*/
       od_apply_prefilter_frame(state->mctmp[pli], w, nhsb, nvsb,
@@ -835,9 +821,36 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
   /*Dump YUV*/
   od_state_dump_yuv(&dec->state, dec->state.io_imgs + OD_FRAME_REC, "out");
 #endif
-  od_state_upsample8(&dec->state,
+#if OD_REFERENCE_BYTES==1
+  /* if full-precision reference is disabled, we need to shift ctmp down before upscaling into the reference */
+  {
+    int nplanes;
+    int pli;
+    nplanes = dec->state.info.nplanes;
+    for(pli=0; pli<nplanes; pli++){
+      od_coeff *data;
+      int coeff_shift;
+      int w;
+      int h;
+      int x;
+      int y;
+      w = dec->state.frame_width;
+      h = dec->state.frame_height;
+      coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+      data = dec->state.ctmp[pli];
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+         data[y*w + x] =
+          OD_CLAMP255(((data[y*w + x]
+          + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
+        }
+      }
+    }
+  }
+#endif
+  od_state_upsample(&dec->state,
    dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF],
-   dec->state.io_imgs + OD_FRAME_REC);
+   dec->state.ctmp);
   /*Return decoded frame.*/
   *img = dec->state.io_imgs[OD_FRAME_REC];
   img->width = dec->state.info.pic_width;

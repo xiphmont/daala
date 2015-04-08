@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "cpu.h"
 
 #if defined(OD_X86ASM)
+# if (OD_REFERENCE_BYTES==1)
 
 /*So here are the constraints we have:
   We want (as much as possible) the same code to compile on x86-32 and x86-64.
@@ -106,8 +107,8 @@ static const unsigned short __attribute__((aligned(16),used)) OD_BILV[128]={
   0xF,0xF,0xF,0xF,0xF,0xF,0xF,0xF
 };
 
-#if defined(OD_CHECKASM)
-void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
+# if defined(OD_CHECKASM)
+void od_mc_predict1fmv8_check(od_reftype *_dst,const od_reftype *_src,
  int _systride,ogg_int32_t _mvx,ogg_int32_t _mvy,
  int _log_xblk_sz,int _log_yblk_sz){
   unsigned char dst[16*16];
@@ -119,7 +120,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   xblk_sz=1<<_log_xblk_sz;
   yblk_sz=1<<_log_yblk_sz;
   failed=0;
-  od_mc_predict1fmv8_c(dst,_src,_systride,_mvx,_mvy,
+  od_mc_predict1fmv_c(dst,_src,_systride,_mvx,_mvy,
    _log_xblk_sz,_log_yblk_sz);
   for(j=0;j<yblk_sz;j++){
     for(i=0;i<xblk_sz;i++){
@@ -136,7 +137,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   }
   OD_ASSERT(!failed);
 }
-#endif
+# endif
 
 /*Initializes %%xmm7 to contain the mask 0x00FF00FF00FF00FF00FF00FF00FF00FF,
    %xmm5 to contain 8 replicated copies of %[hscale], and %xmm6 to contain 8
@@ -144,7 +145,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   We can't keep both %xmm5 and %xmm6 free throughout the HV blend, so we spill
    %xmm6 to %[vscale8] as it is used less often, and at the end, where there is
    less register pressure.*/
-#define OD_MC_PREDICT1FMV8HV_PROLOG \
+# define OD_MC_PREDICT1FMV8HV_PROLOG \
   "#OD_MC_PREDICT1FMV8HV_PROLOG\n\t" \
   "movd %[hscale],%%xmm5\n\t" \
   "pcmpeqw %%xmm7,%%xmm7\n\t" \
@@ -158,7 +159,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
 
 /*Initializes %%xmm7 to contain the mask 0x00FF00FF00FF00FF00FF00FF00FF00FF and
    %xmm5 to contain 8 replicated copies of %[hscale].*/
-#define OD_MC_PREDICT1FMV8H_PROLOG \
+# define OD_MC_PREDICT1FMV8H_PROLOG \
   "#OD_MC_PREDICT1FMV8H_PROLOG\n\t" \
   "movd %[hscale],%%xmm5\n\t" \
   "pcmpeqw %%xmm7,%%xmm7\n\t" \
@@ -168,7 +169,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
 
 /*Initializes %%xmm7 to contain the mask 0x00FF00FF00FF00FF00FF00FF00FF00FF and
    %xmm6 to contain 8 replicated copies of %[vscale].*/
-#define OD_MC_PREDICT1FMV8V_PROLOG \
+# define OD_MC_PREDICT1FMV8V_PROLOG \
   "#OD_MC_PREDICT1FMV8V_PROLOG\n\t" \
   "movd %[vscale],%%xmm6\n\t" \
   "pcmpeqw %%xmm7,%%xmm7\n\t" \
@@ -177,12 +178,12 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pshufd $0x00,%%xmm6,%%xmm6\n\t" \
 
 /*Initializes %%xmm7 to contain the mask 0x00FF00FF00FF00FF00FF00FF00FF00F.*/
-#define OD_MC_PREDICT1FMV8_PROLOG \
+# define OD_MC_PREDICT1FMV8_PROLOG \
   "#OD_MC_PREDICT1FMV8_PROLOG\n\t" \
   "pcmpeqw %%xmm7,%%xmm7\n\t" \
   "psrlw $8,%%xmm7\n\t" \
 
-#define OD_MC_PREDICT1FMV8HV_4x4 \
+# define OD_MC_PREDICT1FMV8HV_4x4 \
   "#OD_MC_PREDICT1FMV8HV_4x4\n\t" \
   "movq (%[src],%[systride],2),%%xmm1\n\t" \
   "lea (%[src],%[systride],2),%[a]\n\t" \
@@ -251,7 +252,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8H_4x4 \
+# define OD_MC_PREDICT1FMV8H_4x4 \
   "#OD_MC_PREDICT1FMV8H_4x4\n\t" \
   "movq (%[src],%[systride],2),%%xmm1\n\t" \
   "lea (%[src],%[systride],2),%[a]\n\t" \
@@ -278,7 +279,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8V_4x4 \
+# define OD_MC_PREDICT1FMV8V_4x4 \
   "#OD_MC_PREDICT1FMV8V_4x4\n\t" \
   "movq (%[src],%[systride],2),%%xmm1\n\t" \
   "lea (%[src],%[systride],2),%[a]\n\t" \
@@ -313,7 +314,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8_4x4 \
+# define OD_MC_PREDICT1FMV8_4x4 \
   "#OD_MC_PREDICT1FMV8V_4x4\n\t" \
   "movq (%[src],%[systride],2),%%xmm1\n\t" \
   "lea (%[src],%[systride],2),%[a]\n\t" \
@@ -335,7 +336,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
    the binary for the small advantage, but it could be done by passing in
    "lddqu" instead of "movdqu" for the *_8x2 and *_16x1 macros below.*/
 
-#define OD_MC_PREDICT1FMV8HV_8x2(_lddqu) \
+# define OD_MC_PREDICT1FMV8HV_8x2(_lddqu) \
   "#OD_MC_PREDICT1FMV8HV_8x2\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "lea (%[src],%[systride]),%[a]\n\t" \
@@ -379,7 +380,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8H_8x2(_lddqu) \
+# define OD_MC_PREDICT1FMV8H_8x2(_lddqu) \
   "#OD_MC_PREDICT1FMV8H_8x2\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "movdqa %%xmm0,%%xmm1\n\t" \
@@ -399,7 +400,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8V_8x2(_lddqu) \
+# define OD_MC_PREDICT1FMV8V_8x2(_lddqu) \
   "#OD_MC_PREDICT1FMV8V_8x2\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "lea (%[src],%[systride]),%[a]\n\t" \
@@ -420,7 +421,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8_8x2(_lddqu) \
+# define OD_MC_PREDICT1FMV8_8x2(_lddqu) \
   "#OD_MC_PREDICT1FMV8_8x2\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   _lddqu " (%[src],%[systride],2),%%xmm2\n\t" \
@@ -428,7 +429,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8HV_16x1(_lddqu) \
+# define OD_MC_PREDICT1FMV8HV_16x1(_lddqu) \
   "#OD_MC_PREDICT1FMV8HV_16x1\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "movdqa %%xmm0,%%xmm1\n\t" \
@@ -471,7 +472,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8H_16x1(_lddqu) \
+# define OD_MC_PREDICT1FMV8H_16x1(_lddqu) \
   "#OD_MC_PREDICT1FMV8H_16x1\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "movdqa %%xmm0,%%xmm1\n\t" \
@@ -491,7 +492,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8V_16x1(_lddqu) \
+# define OD_MC_PREDICT1FMV8V_16x1(_lddqu) \
   "#OD_MC_PREDICT1FMV8V_16x1\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   "lea (%[src],%[systride]),%[a]\n\t" \
@@ -512,7 +513,7 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
   "pand %%xmm7,%%xmm2\n\t" \
   "packuswb %%xmm2,%%xmm0\n\t" \
 
-#define OD_MC_PREDICT1FMV8_16x1(_lddqu) \
+# define OD_MC_PREDICT1FMV8_16x1(_lddqu) \
   "#OD_MC_PREDICT1FMV8_16x1\n\t" \
   _lddqu " (%[src]),%%xmm0\n\t" \
   _lddqu " 0x10(%[src]),%%xmm2\n\t" \
@@ -525,10 +526,10 @@ void od_mc_predict1fmv8_check(unsigned char *_dst,const unsigned char *_src,
    require byte-by-byte unaligned loads, etc.).
   This should let the compiler aggressively unroll loops, etc.
   It can't vectorize it itself because of the difference in operand sizes.*/
-#if 0
-#define OD_MC_PREDICT1FMV8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){ \
+# if 0
+# define OD_MC_PREDICT1FMV8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_predict1fmv8_##_n##x##_m(od_reftype *_dst, \
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){ \
   int i; \
   int j; \
   if(_mvxf!=0){ \
@@ -540,7 +541,7 @@ static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
           a=_src[i<<1]+((_src[i<<1|1]-_src[i<<1])*_mvxf>>16); \
           b=(_src+_systride)[i<<1]+ \
            (((_src+_systride)[i<<1|1]-(_src+_systride)[i<<1])*_mvxf>>16); \
-          _dst[i]=(unsigned char)(a+((b-a)*_mvyf>>16)); \
+          _dst[i]=(od_reftype)(a+((b-a)*_mvyf>>16)); \
         } \
         _src+=_systride<<1; \
         _dst+=(_n); \
@@ -549,7 +550,7 @@ static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
     else{ \
       for(j=0;j<(_m);j++){ \
         for(i=0;i<(_n);i++){ \
-          _dst[i]=(unsigned char) \
+          _dst[i]=(od_reftype) \
            (_src[i<<1]+((_src[i<<1|1]-_src[i<<1])*_mvxf>>16)); \
         } \
         _src+=_systride<<1; \
@@ -561,7 +562,7 @@ static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
     if(_mvyf!=0){ \
       for(j=0;j<(_m);j++){ \
         for(i=0;i<(_n);i++){ \
-          _dst[i]=(unsigned char) \
+          _dst[i]=(od_reftype) \
            (_src[i<<1]+(((_src+_systride)[(i<<1)]-_src[i<<1])*_mvyf>>16)); \
         } \
         _src+=_systride<<1; \
@@ -578,18 +579,18 @@ static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
   } \
 } \
 
-#else
+# else
 /*The above is great and all, but not really worth the 24K of code it generates
    considering how seldom most of it is used.
   Even gcc won't inline these itself.*/
-#define OD_MC_PREDICT1FMV8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_predict1fmv8_##_n##x##_m(unsigned char *_dst, \
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){ \
-  od_mc_predict1fmv8_c(_dst,_src,_systride, \
+# define OD_MC_PREDICT1FMV8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_predict1fmv8_##_n##x##_m(od_reftype *_dst, \
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){ \
+  od_mc_predict1fmv_c(_dst,_src,_systride, \
    (ogg_int32_t)_mvxf,(ogg_int32_t)_mvyf,_log_xblk_sz,_log_yblk_sz); \
 } \
 
-#endif
+# endif
 
 OD_MC_PREDICT1FMV8_C(1,1,0,0)
 OD_MC_PREDICT1FMV8_C(1,2,0,1)
@@ -606,8 +607,8 @@ OD_MC_PREDICT1FMV8_C(2,16,1,4)
 OD_MC_PREDICT1FMV8_C(4,1,2,0)
 OD_MC_PREDICT1FMV8_C(4,2,2,1)
 
-static void od_mc_predict1fmv8_4x4(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_4x4(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   if(_mvxf!=0){
@@ -655,8 +656,8 @@ static void od_mc_predict1fmv8_4x4(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_4x8(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_4x8(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -730,8 +731,8 @@ static void od_mc_predict1fmv8_4x8(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_4x16(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_4x16(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -807,8 +808,8 @@ static void od_mc_predict1fmv8_4x16(unsigned char *_dst,
 
 OD_MC_PREDICT1FMV8_C(8,1,3,0)
 
-static void od_mc_predict1fmv8_8x2(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_8x2(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   if(_mvxf!=0){
@@ -856,8 +857,8 @@ static void od_mc_predict1fmv8_8x2(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_8x4(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_8x4(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -931,8 +932,8 @@ static void od_mc_predict1fmv8_8x4(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_8x8(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_8x8(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1006,8 +1007,8 @@ static void od_mc_predict1fmv8_8x8(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_8x16(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_8x16(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1081,8 +1082,8 @@ static void od_mc_predict1fmv8_8x16(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_16x1(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_16x1(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   if(_mvxf!=0){
@@ -1130,8 +1131,8 @@ static void od_mc_predict1fmv8_16x1(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_16x2(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_16x2(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1205,8 +1206,8 @@ static void od_mc_predict1fmv8_16x2(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_16x4(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_16x4(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1280,8 +1281,8 @@ static void od_mc_predict1fmv8_16x4(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_16x8(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_16x8(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1355,8 +1356,8 @@ static void od_mc_predict1fmv8_16x8(unsigned char *_dst,
   }
 }
 
-static void od_mc_predict1fmv8_16x16(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
+static void od_mc_predict1fmv8_16x16(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf){
   unsigned short __attribute__((aligned(16))) mvyf[8];
   ptrdiff_t                                   a;
   ptrdiff_t                                   row;
@@ -1430,10 +1431,10 @@ static void od_mc_predict1fmv8_16x16(unsigned char *_dst,
   }
 }
 
-typedef void (*od_mc_predict1fmv8_fixed_func)(unsigned char *_dst,
- const unsigned char *_src,int _systride,unsigned _mvxf,unsigned _mvyf);
+typedef void (*od_mc_predict1fmv8_fixed_func)(od_reftype *_dst,
+ const od_reftype *_src,int _systride,unsigned _mvxf,unsigned _mvyf);
 
-void od_mc_predict1fmv8_sse2(unsigned char *_dst,const unsigned char *_src,
+void od_mc_predict1fmv8_sse2(od_reftype *_dst,const od_reftype *_src,
  int _systride,ogg_int32_t _mvx,ogg_int32_t _mvy,
  int _log_xblk_sz,int _log_yblk_sz){
   static const od_mc_predict1fmv8_fixed_func VTBL[5][5]={
@@ -1475,20 +1476,20 @@ void od_mc_predict1fmv8_sse2(unsigned char *_dst,const unsigned char *_src,
   };
   (*VTBL[_log_xblk_sz][_log_yblk_sz])(_dst,
    _src+(_mvx>>16)+_systride*(_mvy>>16),_systride,_mvx&0xFFFFU,_mvy&0xFFFFU);
-#if defined(OD_CHECKASM)
+# if defined(OD_CHECKASM)
   od_mc_predict1fmv8_check(_dst,_src,_systride,_mvx,_mvy,
    _log_xblk_sz,_log_yblk_sz);
   /*fprintf(stderr,"od_mc_predict1fmv8 %ix%i check finished.\n",
    1<<_log_xblk_sz,1<<_log_yblk_sz);*/
-#endif
+# endif
 }
 
 
 
-#if defined(OD_CHECKASM)
-static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _log_xblk_sz,int _log_yblk_sz){
-  unsigned char  dst[16*16];
+# if defined(OD_CHECKASM)
+static void od_mc_blend_full8_check(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _log_xblk_sz,int _log_yblk_sz){
+  od_reftype  dst[16*16];
   int            xblk_sz;
   int            yblk_sz;
   int            failed;
@@ -1497,7 +1498,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   xblk_sz=1<<_log_xblk_sz;
   yblk_sz=1<<_log_yblk_sz;
   failed=0;
-  od_mc_blend_full8_c(dst,xblk_sz,_src,_log_xblk_sz,_log_yblk_sz);
+  od_mc_blend_full_c(dst,xblk_sz,_src,_log_xblk_sz,_log_yblk_sz);
   for(j=0;j<yblk_sz;j++){
     for(i=0;i<xblk_sz;i++){
       if(dst[i+(j<<_log_xblk_sz)]!=(_dst+j*_dystride)[i]){
@@ -1513,13 +1514,13 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   }
   OD_ASSERT(!failed);
 }
-#endif
+# endif
 
 /*Loads a block of 16 bytes from each of the 4 images into xmm0...xmm3.
   We swap images 2 and 3 here, so that the order more closely follows the
    natural rectilinear indexing, instead of the circular indexing the rest of
    the code uses.*/
-#define OD_IM_LOAD16 \
+# define OD_IM_LOAD16 \
   "#OD_IM_LOAD16\n\t" \
   "mov (%[src]),%[a]\n\t" \
   "movdqa (%[a],%[row]),%%xmm0\n\t" \
@@ -1543,7 +1544,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   _rega: The input register, which will contain the low-order output.
   _regb: Will contain the high-order output.
   _zero: A register containing the value zero.*/
-#define OD_IM_UNPACK(_rega,_regb,_zero) \
+# define OD_IM_UNPACK(_rega,_regb,_zero) \
   "#OD_IM_UNPACK\n\t" \
   "movdqa " _rega "," _regb "\n\t" \
   "punpcklbw " _zero "," _rega "\n\t" \
@@ -1564,7 +1565,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   _scaleb: The weights to apply to the high-order register in the second pair.
            The weights applied to the high-order register in the first pair are
             (1<<_shift)-_scaleb.*/
-#define OD_IM_BLEND(_reg0a,_reg0b,_reg1a,_reg1b,_shift,_scalea,_scaleb) \
+# define OD_IM_BLEND(_reg0a,_reg0b,_reg1a,_reg1b,_shift,_scalea,_scaleb) \
   "#OD_IM_BLEND\n\t" \
   "psubw " _reg0a "," _reg1a "\n\t" \
   "psubw " _reg0b "," _reg1b "\n\t" \
@@ -1580,7 +1581,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   _regb:  The high-order register.
   _round: The register containing the rounding offset.
   _shift: The immediate that is the amount to shift.*/
-#define OD_IM_PACK(_rega,_regb,_round,_shift) \
+# define OD_IM_PACK(_rega,_regb,_round,_shift) \
   "#OD_IM_PACK\n\t" \
   "paddw " _round "," _rega "\n\t" \
   "paddw " _round "," _regb "\n\t" \
@@ -1601,7 +1602,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
 /*Blends 4 rows of a 4xN block (N up to 64).
   %[dst] must be manually advanced to the proper row beforehand because of its
    stride.*/
-#define OD_MC_BLEND_FULL8_4x4(_log_yblk_sz) \
+# define OD_MC_BLEND_FULL8_4x4(_log_yblk_sz) \
   "pxor %%xmm7,%%xmm7\n\t" \
   /*Load the 4 images to blend.*/ \
   OD_IM_LOAD16 \
@@ -1639,7 +1640,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
 /*Blends 2 rows of an 8xN block (N up to 32).
   %[dst] must be manually advanced to the proper row beforehand because of its
    stride.*/
-#define OD_MC_BLEND_FULL8_8x2(_log_yblk_sz) \
+# define OD_MC_BLEND_FULL8_8x2(_log_yblk_sz) \
   "pxor %%xmm7,%%xmm7\n\t" \
   /*Load the 4 images to blend.*/ \
   OD_IM_LOAD16 \
@@ -1671,7 +1672,7 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
 /*Blends 1 row of a 16xN block (N up to 16).
   %[dst] must be manually advanced to the proper row beforehand because of its
    stride.*/
-#define OD_MC_BLEND_FULL8_16x1(_log_yblk_sz) \
+# define OD_MC_BLEND_FULL8_16x1(_log_yblk_sz) \
   "pxor %%xmm7,%%xmm7\n\t" \
   /*Load the 4 images to blend.*/ \
   OD_IM_LOAD16 \
@@ -1697,15 +1698,15 @@ static void od_mc_blend_full8_check(unsigned char *_dst,int _dystride,
   /*Get it back out to memory.*/ \
   "movdqa %%xmm0,(%[dst])\n\t" \
 
-#if 0
+# if 0
 /*Defines a pure-C implementation with hard-coded loop limits for block sizes
    we don't want to implement manually (e.g., that have fewer than 16 bytes,
    require byte-by-byte unaligned loads, etc.).
   This should let the compiler aggressively unroll loops, etc.
   It can't vectorize it itself because of the difference in operand sizes.*/
-#define OD_MC_BLEND_FULL8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_blend_full8_##_n##x##_m(unsigned char *_dst,int _dystride, \
- const unsigned char *_src[4]){ \
+# define OD_MC_BLEND_FULL8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_blend_full8_##_n##x##_m(od_reftype *_dst,int _dystride, \
+ const od_reftype *_src[4]){ \
   int      o; \
   unsigned a; \
   unsigned b; \
@@ -1716,7 +1717,7 @@ static void od_mc_blend_full8_##_n##x##_m(unsigned char *_dst,int _dystride, \
     for(i=0;i<(_n);i++){ \
       a=(_src[0][o+i]<<(_log_xblk_sz))+(_src[1][o+i]-_src[0][o+i])*i; \
       b=(_src[3][o+i]<<(_log_xblk_sz))+(_src[2][o+i]-_src[3][o+i])*i; \
-      _dst[i]=(unsigned char)((a<<(_log_yblk_sz))+(b-a)*j+ \
+      _dst[i]=(od_reftype)((a<<(_log_yblk_sz))+(b-a)*j+ \
        (1<<(_log_xblk_sz)+(_log_yblk_sz))/2>>(_log_xblk_sz)+(_log_yblk_sz)); \
     } \
     o+=(_m); \
@@ -1724,16 +1725,16 @@ static void od_mc_blend_full8_##_n##x##_m(unsigned char *_dst,int _dystride, \
   } \
 } \
 
-#else
+# else
 /*With -O3 and inter-module optimization, gcc inlines these anyway.
   I'd rather leave the choice to the compiler.*/
-#define OD_MC_BLEND_FULL8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_blend_full8_##_n##x##_m(unsigned char *_dst,int _dystride, \
- const unsigned char *_src[4]){ \
-  od_mc_blend_full8_c(_dst,_dystride,_src,_log_xblk_sz,_log_yblk_sz); \
+# define OD_MC_BLEND_FULL8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_blend_full8_##_n##x##_m(od_reftype *_dst,int _dystride, \
+ const od_reftype *_src[4]){ \
+  od_mc_blend_full_c(_dst,_dystride,_src,_log_xblk_sz,_log_yblk_sz); \
 } \
 
-#endif
+# endif
 
 OD_MC_BLEND_FULL8_C(1,1,0,0)
 OD_MC_BLEND_FULL8_C(1,2,0,1)
@@ -1750,8 +1751,8 @@ OD_MC_BLEND_FULL8_C(2,16,1,4)
 OD_MC_BLEND_FULL8_C(4,1,2,0)
 OD_MC_BLEND_FULL8_C(4,2,2,1)
 
-static void od_mc_blend_full8_4x4(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_4x4(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   __asm__ __volatile__(
     OD_MC_BLEND_FULL8_4x4(2)
@@ -1766,8 +1767,8 @@ static void od_mc_blend_full8_4x4(unsigned char *_dst,int _dystride,
   );
 }
 
-static void od_mc_blend_full8_4x8(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_4x8(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   /*We use loops like these so gcc can decide to unroll them if it wants (and
@@ -1790,8 +1791,8 @@ static void od_mc_blend_full8_4x8(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_4x16(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_4x16(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x40;row+=0x10){
@@ -1808,8 +1809,8 @@ static void od_mc_blend_full8_4x16(unsigned char *_dst,int _dystride,
 
 OD_MC_BLEND_FULL8_C(8,1,3,0)
 
-static void od_mc_blend_full8_8x2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_8x2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   __asm__ __volatile__(
     OD_MC_BLEND_FULL8_8x2(1)
@@ -1820,8 +1821,8 @@ static void od_mc_blend_full8_8x2(unsigned char *_dst,int _dystride,
   );
 }
 
-static void od_mc_blend_full8_8x4(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_8x4(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x20;row+=0x10){
@@ -1836,8 +1837,8 @@ static void od_mc_blend_full8_8x4(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_8x8(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_8x8(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x40;row+=0x10){
@@ -1852,8 +1853,8 @@ static void od_mc_blend_full8_8x8(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_8x16(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_8x16(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x80;row+=0x10){
@@ -1868,8 +1869,8 @@ static void od_mc_blend_full8_8x16(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_16x1(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_16x1(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   __asm__ __volatile__(
     OD_MC_BLEND_FULL8_16x1(0)
@@ -1880,8 +1881,8 @@ static void od_mc_blend_full8_16x1(unsigned char *_dst,int _dystride,
   );
 }
 
-static void od_mc_blend_full8_16x2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_16x2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x20;row+=0x10){
@@ -1896,8 +1897,8 @@ static void od_mc_blend_full8_16x2(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_16x4(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_16x4(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x40;row+=0x10){
@@ -1912,8 +1913,8 @@ static void od_mc_blend_full8_16x4(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_16x8(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_16x8(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x80;row+=0x10){
@@ -1928,8 +1929,8 @@ static void od_mc_blend_full8_16x8(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full8_16x16(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]){
+static void od_mc_blend_full8_16x16(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x100;row+=0x10){
@@ -1944,13 +1945,13 @@ static void od_mc_blend_full8_16x16(unsigned char *_dst,int _dystride,
   }
 }
 
-typedef void (*od_mc_blend_full8_fixed_func)(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4]);
+typedef void (*od_mc_blend_full8_fixed_func)(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4]);
 
 
 /*Perform normal bilinear blending.*/
-void od_mc_blend_full8_sse2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _log_xblk_sz,int _log_yblk_sz){
+void od_mc_blend_full8_sse2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _log_xblk_sz,int _log_yblk_sz){
   static const od_mc_blend_full8_fixed_func VTBL[5][5]={
     {
       od_mc_blend_full8_1x1,od_mc_blend_full8_1x2,
@@ -1979,19 +1980,19 @@ void od_mc_blend_full8_sse2(unsigned char *_dst,int _dystride,
     }
   };
   (*VTBL[_log_xblk_sz][_log_yblk_sz])(_dst,_dystride,_src);
-#if defined(OD_CHECKASM)
+# if defined(OD_CHECKASM)
   od_mc_blend_full8_check(_dst,_dystride,_src,_log_xblk_sz,_log_yblk_sz);
   /*fprintf(stderr,"od_mc_blend_full8 %ix%i check finished.\n",
    1<<_log_xblk_sz,1<<_log_yblk_sz);*/
-#endif
+# endif
 }
 
 
 
-#if defined(OD_CHECKASM)
-void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz){
-  unsigned char dst[16][16];
+# if defined(OD_CHECKASM)
+void od_mc_blend_full_split8_check(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz){
+  od_reftype dst[16][16];
   int           xblk_sz;
   int           yblk_sz;
   int           failed;
@@ -2017,13 +2018,13 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
   }
   OD_ASSERT(!failed);
 }
-#endif
+# endif
 
 
 /*Loads a block of 16 bytes from each the first 2 images into xmm0...xmm3.
   xmm2 and xmm3 contain duplicate copies of xmm0 and xmm1, or not, depending on
    whether the block edges are split or not.*/
-#define OD_IM_LOAD16A \
+# define OD_IM_LOAD16A \
   "#OD_IM_LOAD16A\n\t" \
   "mov (%[src]),%[a]\n\t" \
   "movdqa (%[a],%[row]),%%xmm0\n\t" \
@@ -2037,7 +2038,7 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
 /*Loads a block of 16 bytes from the third image into xmm2 and xmm1.
   xmm1 contains a duplicate copy of xmm2, or not, depending on whether the
    block edge is split or not.*/
-#define OD_IM_LOAD16B \
+# define OD_IM_LOAD16B \
   "#OD_IM_LOAD16B\n\t" \
   "mov %c[pstride]*3(%[src]),%[a]\n\t" \
   "movdqa (%[a],%[row]),%%xmm2\n\t" \
@@ -2047,7 +2048,7 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
 /*Loads a block of 16 bytes from the fourth image into xmm3 and xmm1.
   xmm1 contains a duplicate copy of xmm3, or not, depending on whether the
    block edge is split or not.*/
-#define OD_IM_LOAD16C \
+# define OD_IM_LOAD16C \
   "#OD_IM_LOAD16C\n\t" \
   "mov %c[pstride]*2(%[src]),%[a]\n\t" \
   "movdqa (%[a],%[row]),%%xmm3\n\t" \
@@ -2057,7 +2058,7 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
 /*Blends 4 rows of a 4xN block with split edges (N up to 32).
   %[dst] must be manually advanced to the proper row beforehand because of its
    stride.*/
-#define OD_MC_BLEND_FULL_SPLIT8_4x4(_log_yblk_sz) \
+# define OD_MC_BLEND_FULL_SPLIT8_4x4(_log_yblk_sz) \
   "pxor %%xmm7,%%xmm7\n\t" \
   /*Load the first two images to blend.*/ \
   OD_IM_LOAD16A \
@@ -2128,7 +2129,7 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
 /*Blends 2 rows of an 8xN block with split edges (N up to 16).
   %[dst] must be manually advanced to the proper row beforehand because of its
    stride.*/
-#define OD_MC_BLEND_FULL_SPLIT8_8x2(_log_yblk_sz) \
+# define OD_MC_BLEND_FULL_SPLIT8_8x2(_log_yblk_sz) \
   "pxor %%xmm7,%%xmm7\n\t" \
   /*Load the first two images to blend.*/ \
   OD_IM_LOAD16A \
@@ -2188,7 +2189,7 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
   "psrldq $8,%%xmm0\n\t" \
   "movq %%xmm0,(%[dst],%[dystride])\n\t" \
 
-#if 0
+# if 0
 /*Defines a pure-C implementation with hard-coded loop limits for block sizes
    we don't want to implement manually (e.g., that have fewer than 16 bytes,
    require byte-by-byte unaligned loads, etc.).
@@ -2198,9 +2199,9 @@ void od_mc_blend_full_split8_check(unsigned char *_dst,int _dystride,
    bilinear weights) might actually be faster than the pure-C routine we're
    currently using, which adjusts the weights.
   This should be investigated.*/
-#define OD_MC_BLEND_FULL_SPLIT8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_blend_full_split8_##_n##x##_m(unsigned char *_dst, \
- int _dystride,const unsigned char *_src[8]){ \
+# define OD_MC_BLEND_FULL_SPLIT8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_blend_full_split8_##_n##x##_m(od_reftype *_dst, \
+ int _dystride,const od_reftype *_src[8]){ \
   int      o; \
   unsigned a; \
   unsigned b; \
@@ -2213,7 +2214,7 @@ static void od_mc_blend_full_split8_##_n##x##_m(unsigned char *_dst, \
        (_src[1][o+i]-_src[0][o+i]+_src[4+1][o+i]-_src[4+0][o+i])*i; \
       b=(_src[3][o+i]+_src[4+3][o+i]<<(_log_xblk_sz))+ \
        (_src[2][o+i]-_src[3][o+i]+_src[4+2][o+i]-_src[4+3][o+i])*i; \
-      _dst[i]=(unsigned char)((a<<(_log_yblk_sz))+(b-a)*j+ \
+      _dst[i]=(od_reftype)((a<<(_log_yblk_sz))+(b-a)*j+ \
        (1<<(_log_xblk_sz)+(_log_yblk_sz))>>(_log_xblk_sz)+(_log_yblk_sz)+1); \
     } \
     o+=(_m); \
@@ -2221,13 +2222,13 @@ static void od_mc_blend_full_split8_##_n##x##_m(unsigned char *_dst, \
   } \
 } \
 
-#else
+# else
 /*TODO: This approach (using pointer aliasing to allow us to use normal
    bilinear weights) might actually be faster than the pure-C routine we're
    currently using, which adjusts the weights.
   This should be investigated.*/
-static void od_mc_blend_full_split8_bil_c(unsigned char *_dst,
- int _dystride,const unsigned char *_src[8],int _log_xblk_sz,int _log_yblk_sz){
+static void od_mc_blend_full_split8_bil_c(od_reftype *_dst,
+ int _dystride,const od_reftype *_src[8],int _log_xblk_sz,int _log_yblk_sz){
   int      xblk_sz;
   int      yblk_sz;
   int      round;
@@ -2246,7 +2247,7 @@ static void od_mc_blend_full_split8_bil_c(unsigned char *_dst,
        (_src[1][o+i]-_src[0][o+i]+_src[4+1][o+i]-_src[4+0][o+i])*i;
       b=((_src[3][o+i]+_src[4+3][o+i])<<_log_xblk_sz)+
        (_src[2][o+i]-_src[3][o+i]+_src[4+2][o+i]-_src[4+3][o+i])*i;
-      _dst[i]=(unsigned char)(((a<<_log_yblk_sz)+(b-a)*j+
+      _dst[i]=(od_reftype)(((a<<_log_yblk_sz)+(b-a)*j+
        round)>>(_log_xblk_sz+_log_yblk_sz+1));
     }
     o+=xblk_sz;
@@ -2256,14 +2257,14 @@ static void od_mc_blend_full_split8_bil_c(unsigned char *_dst,
 
 /*With -O3 and inter-module optimization, gcc inlines these anyway.
   I'd rather leave the choice to the compiler.*/
-#define OD_MC_BLEND_FULL_SPLIT8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
-static void od_mc_blend_full_split8_##_n##x##_m(unsigned char *_dst, \
- int _dystride,const unsigned char *_src[8]){ \
+# define OD_MC_BLEND_FULL_SPLIT8_C(_n,_m,_log_xblk_sz,_log_yblk_sz) \
+static void od_mc_blend_full_split8_##_n##x##_m(od_reftype *_dst, \
+ int _dystride,const od_reftype *_src[8]){ \
   od_mc_blend_full_split8_bil_c(_dst,_dystride,_src, \
   _log_xblk_sz,_log_yblk_sz); \
 } \
 
-#endif
+# endif
 
 OD_MC_BLEND_FULL_SPLIT8_C(1,1,0,0)
 OD_MC_BLEND_FULL_SPLIT8_C(1,2,0,1)
@@ -2278,8 +2279,8 @@ OD_MC_BLEND_FULL_SPLIT8_C(2,8,1,3)
 OD_MC_BLEND_FULL_SPLIT8_C(4,1,2,0)
 OD_MC_BLEND_FULL_SPLIT8_C(4,2,2,1)
 
-static void od_mc_blend_full_split8_4x4(unsigned char *_dst,int _dystride,
- const unsigned char *_src[8]){
+static void od_mc_blend_full_split8_4x4(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[8]){
   ptrdiff_t a;
   __asm__ __volatile__(
     OD_MC_BLEND_FULL_SPLIT8_4x4(2)
@@ -2290,8 +2291,8 @@ static void od_mc_blend_full_split8_4x4(unsigned char *_dst,int _dystride,
   );
 }
 
-static void od_mc_blend_full_split8_4x8(unsigned char *_dst,int _dystride,
- const unsigned char *_src[8]){
+static void od_mc_blend_full_split8_4x8(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[8]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x20;row+=0x10){
@@ -2308,8 +2309,8 @@ static void od_mc_blend_full_split8_4x8(unsigned char *_dst,int _dystride,
 
 OD_MC_BLEND_FULL_SPLIT8_C(8,1,3,0)
 
-static void od_mc_blend_full_split8_8x2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[8]){
+static void od_mc_blend_full_split8_8x2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[8]){
   ptrdiff_t a;
   __asm__ __volatile__(
     OD_MC_BLEND_FULL_SPLIT8_8x2(1)
@@ -2320,8 +2321,8 @@ static void od_mc_blend_full_split8_8x2(unsigned char *_dst,int _dystride,
   );
 }
 
-static void od_mc_blend_full_split8_8x4(unsigned char *_dst,int _dystride,
- const unsigned char *_src[8]){
+static void od_mc_blend_full_split8_8x4(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[8]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x20;row+=0x10){
@@ -2336,8 +2337,8 @@ static void od_mc_blend_full_split8_8x4(unsigned char *_dst,int _dystride,
   }
 }
 
-static void od_mc_blend_full_split8_8x8(unsigned char *_dst,int _dystride,
- const unsigned char *_src[8]){
+static void od_mc_blend_full_split8_8x8(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[8]){
   ptrdiff_t a;
   ptrdiff_t row;
   for(row=0;row<0x40;row+=0x10){
@@ -2353,15 +2354,15 @@ static void od_mc_blend_full_split8_8x8(unsigned char *_dst,int _dystride,
 }
 
 
-typedef void (*od_mc_blend_full_split8_fixed_func)(unsigned char *_dst,
- int _dystride,const unsigned char *_src[8]);
+typedef void (*od_mc_blend_full_split8_fixed_func)(od_reftype *_dst,
+ int _dystride,const od_reftype *_src[8]);
 
 
 
 /*Sets up a second set of image pointers based on the given split state to
    properly shift weight from one image to another.*/
-static void od_mc_setup_split_ptrs(const unsigned char *_drc[4],
- const unsigned char *_src[4],int _c,int _s){
+static void od_mc_setup_split_ptrs(const od_reftype *_drc[4],
+ const od_reftype *_src[4],int _c,int _s){
   int j;
   int k;
   _drc[_c]=_src[_c];
@@ -2376,8 +2377,8 @@ static void od_mc_setup_split_ptrs(const unsigned char *_drc[4],
 }
 
 /*Perform normal bilinear blending.*/
-void od_mc_blend_full_split8_sse2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz){
+void od_mc_blend_full_split8_sse2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz){
   static const od_mc_blend_full_split8_fixed_func VTBL[4][4]={
     {
       od_mc_blend_full_split8_1x1,od_mc_blend_full_split8_1x2,
@@ -2397,16 +2398,17 @@ void od_mc_blend_full_split8_sse2(unsigned char *_dst,int _dystride,
     }
   };
   /*We pack all the image pointers in one array to save a register.*/
-  const unsigned char *drc[8];
+  const od_reftype *drc[8];
   memcpy(drc,_src,sizeof(*drc)*4);
   od_mc_setup_split_ptrs(drc+4,drc,_c,_s);
   (*VTBL[_log_xblk_sz][_log_yblk_sz])(_dst,_dystride,drc);
-#if defined(OD_CHECKASM)
+# if defined(OD_CHECKASM)
   od_mc_blend_full_split8_check(_dst,_dystride,_src,_c,_s,
    _log_xblk_sz,_log_yblk_sz);
   /*fprintf(stderr,"od_mc_blend_full_split8 %ix%i check finished.\n",
    1<<_log_xblk_sz,1<<_log_yblk_sz);*/
-#endif
+# endif
 }
 
+# endif
 #endif

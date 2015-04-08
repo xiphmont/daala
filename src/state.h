@@ -27,6 +27,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
 typedef struct od_state_opt_vtbl od_state_opt_vtbl;
 typedef struct od_state          od_state;
+typedef struct od_reference          od_reference;
 typedef struct od_yuv_dumpfile   od_yuv_dumpfile;
 typedef struct od_adapt_ctx      od_adapt_ctx;
 
@@ -90,13 +91,13 @@ extern const int *const OD_VERT_SETUP_DY[4][4];
 
 /*The shared (encoder and decoder) functions that have accelerated variants.*/
 struct od_state_opt_vtbl{
-  void (*mc_predict1fmv8)(unsigned char *_dst, const unsigned char *_src,
+  void (*mc_predict1fmv)(od_reftype *_dst, const od_reftype *_src,
    int _systride, ogg_int32_t _mvx, ogg_int32_t _mvy,
    int _log_xblk_sz, int _log_yblk_sz);
-  void (*mc_blend_full8)(unsigned char *_dst, int _dystride,
-   const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
-  void (*mc_blend_full_split8)(unsigned char *_dst, int _dystride,
-   const unsigned char *_src[4], int _c, int _s,
+  void (*mc_blend_full)(od_reftype *_dst, int _dystride,
+   const od_reftype *_src[4], int _log_xblk_sz, int _log_yblk_sz);
+  void (*mc_blend_full_split)(od_reftype *_dst, int _dystride,
+   const od_reftype *_src[4], int _c, int _s,
    int _log_xblk_sz, int _log_yblk_sz);
   void (*restore_fpu)(void);
   od_dct_func_2d fdct_2d[OD_NBSIZES + 1];
@@ -150,23 +151,30 @@ struct od_adapt_ctx {
   int skip_increment;
 };
 
+struct od_reference {
+  od_reftype          *planes[OD_NPLANES_MAX];
+};
+
 struct od_state{
   od_adapt_ctx        adapt;
   daala_info          info;
-  OD_ALIGN16(unsigned char mc_buf[5][OD_MCBSIZE_MAX*OD_MCBSIZE_MAX]);
+  OD_ALIGN16(od_reftype mc_buf[5][OD_MCBSIZE_MAX*OD_MCBSIZE_MAX]);
   od_state_opt_vtbl   opt_vtbl;
   ogg_uint32_t        cpu_flags;
   ogg_int32_t         frame_width;
   ogg_int32_t         frame_height;
+  /** reference buffer width and height including padding */
+  ogg_int32_t         frame_buf_width;
+  ogg_int32_t         frame_buf_height;
   /** Buffer for the 4 ref images. */
   int                 ref_imgi[4];
   /** Pointers to the ref images so one can move them around without coping
       them. */
-  od_img              ref_imgs[4];
-  /** Pointer to input and output image. */
+  od_reference        ref_imgs[4];
+  /** Pointer to input/output image; there are frame width/height */
   od_img              io_imgs[2];
-  unsigned char *ref_line_buf[8];
-  unsigned char *ref_img_data;
+  od_reftype         *ref_line_buf[8];
+  void               *ref_img_data;
   /** Increments by 1 for each frame. */
   ogg_int64_t         cur_time;
   od_mv_grid_pt **mv_grid;
@@ -222,36 +230,31 @@ void od_state_clear(od_state *_state);
 
 void od_adapt_ctx_reset(od_adapt_ctx *state, int is_keyframe);
 void od_state_set_mv_res(od_state *state, int mv_res);
-void od_state_pred_block_from_setup(od_state *_state, unsigned char *_buf,
+void od_state_pred_block_from_setup(od_state *_state, od_reftype *_buf,
  int _ystride, int _ref, int _pli, int _vx, int _vy, int _c, int _s,
  int _log_mvb_sz);
-void od_state_pred_block(od_state *_state, unsigned char *_buf, int _ystride,
+void od_state_pred_block(od_state *_state, od_reftype *_buf, int _ystride,
  int _ref, int _pli, int _vx, int _vy, int _log_mvb_sz);
 void od_state_mc_predict(od_state *_state, int _ref);
 void od_state_init_border(od_state *_state);
-void od_state_upsample8(od_state *_state, od_img *_dst, const od_img *_src);
+void od_state_upsample(od_state *_state, od_reference *_dst,
+ od_coeff *_src[OD_NPLANES_MAX]);
 int od_state_dump_yuv(od_state *_state, od_img *_img, const char *_tag);
 # if defined(OD_DUMP_IMAGES)
 int od_state_dump_img(od_state *_state, od_img *_img, const char *_tag);
-void od_img_draw_point(od_img *_img, int _x, int _y,
- const unsigned char _ycbcr[3]);
-void od_img_draw_line(od_img *_img, int _x0, int _y0, int _x1, int _y1,
- const unsigned char _ycbcr[3]);
-void od_state_draw_mv_grid(od_state *_state);
-void od_state_draw_mvs(od_state *_state);
-void od_state_fill_vis(od_state *_state);
+int od_state_dump_ref(od_state *_state, od_reference *_ref, const char *_tag);
 # endif
 
 /*Shared accelerated functions.*/
 
 /*Default pure-C implementations.*/
-void od_mc_predict1fmv8_c(unsigned char *_dst, const unsigned char *_src,
+void od_mc_predict1fmv_c(od_reftype *_dst, const od_reftype *_src,
  int _systride, ogg_int32_t _mvx, ogg_int32_t _mvy,
  int _log_xblk_sz, int _log_yblk_sz);
-void od_mc_blend_full8_c(unsigned char *_dst, int _dystride,
- const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
-void od_mc_blend_full_split8_c(unsigned char *_dst, int _dystride,
- const unsigned char *_src[4], int _c, int _s, int _log_xblk_sz,
+void od_mc_blend_full_c(od_reftype *_dst, int _dystride,
+ const od_reftype *_src[4], int _log_xblk_sz, int _log_yblk_sz);
+void od_mc_blend_full_split_c(od_reftype *_dst, int _dystride,
+ const od_reftype *_src[4], int _c, int _s, int _log_xblk_sz,
  int _log_yblk_sz);
 void od_restore_fpu(od_state *state);
 

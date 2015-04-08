@@ -234,6 +234,62 @@ static ogg_int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   return ret;
 }
 
+static ogg_int32_t od_enc_sad_ref(od_enc_ctx *enc, const od_reftype *p,
+ int pystride, int pxstride, int pli, int x, int y, int log_blk_sz) {
+  od_state *state;
+  od_img_plane *iplane;
+  od_reftype *src;
+  int clipx;
+  int clipy;
+  int clipw;
+  int cliph;
+  int w;
+  int h;
+  int i;
+  int j;
+  const od_reftype *p0;
+  ogg_int32_t ret;
+  state = &enc->state;
+  iplane = state->io_imgs[OD_FRAME_INPUT].planes + pli;
+  /*Compute the block dimensions in the target image plane.*/
+  x >>= iplane->xdec;
+  y >>= iplane->ydec;
+  w = 1 << (log_blk_sz - iplane->xdec);
+  h = 1 << (log_blk_sz - iplane->ydec);
+  /*Clip the block against the active picture region.*/
+  clipx = -x;
+  if (clipx > 0) {
+    w -= clipx;
+    p += clipx*pxstride;
+    x += clipx;
+  }
+  clipy = -y;
+  if (clipy > 0) {
+    h -= clipy;
+    p += clipy*pystride;
+    y += clipy;
+  }
+  clipw = ((state->info.pic_width + (1 << iplane->xdec) - 1) >> iplane->xdec)
+   - x;
+  w = OD_MINI(w, clipw);
+  cliph = ((state->info.pic_height + (1 << iplane->ydec) - 1) >> iplane->ydec)
+   - y;
+  h = OD_MINI(h, cliph);
+  src = iplane->data + y*iplane->ystride + x*iplane->xstride;
+  ret = 0;
+  p0 = p;
+  for (j = 0; j < h; j++) {
+    p = p0;
+    for (i = 0; i < w; i++) {
+      ret += abs(p[0] - src[i]);
+      p += pxstride;
+    }
+    src += iplane->ystride;
+    p0 += pystride;
+  }
+  return ret;
+}
+
 static int od_mv_est_init_impl(od_mv_est_ctx *est, od_enc_ctx *enc) {
   int nhmvbs;
   int nvmvbs;
@@ -650,10 +706,10 @@ static int od_mv_est_bits(od_mv_est_ctx *est, int equal_mvs,
 }
 
 /*Computes the SAD of a whole-pel BMA block with the given parameters.*/
-static ogg_int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
+static ogg_int32_t od_mv_est_bma_sad(od_mv_est_ctx *est,
  int ref, int bx, int by, int mvx, int mvy, int log_mvb_sz) {
   od_state *state;
-  od_img_plane *iplane;
+  od_reftype *iplane;
   ogg_int32_t ret;
   int refi;
   int pmvx;
@@ -662,29 +718,38 @@ static ogg_int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
   int pby;
   int dx;
   int dy;
+  int xdec;
+  int ydec;
+  int ystride;
   state = &est->enc->state;
   refi = state->ref_imgi[ref];
-  iplane = state->ref_imgs[refi].planes + 0;
-  pmvx = OD_DIV_POW2_RE(mvx << 1, iplane->xdec);
-  pmvy = OD_DIV_POW2_RE(mvy << 1, iplane->ydec);
-  pbx = (bx + (1 << iplane->xdec) - 1) & ~((1 << iplane->xdec) - 1);
-  pby = (by + (1 << iplane->ydec) - 1) & ~((1 << iplane->ydec) - 1);
-  dx = (pbx << 1 >> iplane->xdec) + pmvx;
-  dy = (pby << 1 >> iplane->ydec) + pmvy;
-  ret = od_enc_sad8(est->enc, iplane->data + dy*iplane->ystride + dx,
-   iplane->ystride << 1, 2, 0, pbx, pby, log_mvb_sz + 2);
+  iplane = state->ref_imgs[refi].planes[0];
+  xdec = state->info.plane_info[0].xdec;
+  ydec = state->info.plane_info[0].ydec;
+  ystride = (state->frame_buf_width<<1);
+  pmvx = OD_DIV_POW2_RE(mvx << 1, xdec);
+  pmvy = OD_DIV_POW2_RE(mvy << 1, ydec);
+  pbx = (bx + (1 << xdec) - 1) & ~((1 << xdec) - 1);
+  pby = (by + (1 << ydec) - 1) & ~((1 << ydec) - 1);
+  dx = (pbx << 1 >> xdec) + pmvx;
+  dy = (pby << 1 >> ydec) + pmvy;
+  ret = od_enc_sad_ref(est->enc, iplane + dy*ystride + dx,
+   ystride << 1, 2, 0, pbx, pby, log_mvb_sz + 2);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
     for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
-      iplane = state->ref_imgs[refi].planes + pli;
-      pmvx = OD_DIV_POW2_RE(mvx << 1, iplane->xdec);
-      pmvy = OD_DIV_POW2_RE(mvy << 1, iplane->ydec);
-      pbx = (bx + (1 << iplane->xdec) - 1) & ~((1 << iplane->xdec) - 1);
-      pby = (by + (1 << iplane->ydec) - 1) & ~((1 << iplane->ydec) - 1);
-      dx = (pbx << 1 >> iplane->xdec) + pmvx;
-      dy = (pby << 1 >> iplane->ydec) + pmvy;
-      ret += od_enc_sad8(est->enc, iplane->data + dy*iplane->ystride + dx,
-       iplane->ystride << 1, 2, pli, pbx, pby, log_mvb_sz + 2) >>
+      iplane = state->ref_imgs[refi].planes[pli];
+      xdec = state->info.plane_info[pli].xdec;
+      ydec = state->info.plane_info[pli].ydec;
+      ystride = (state->frame_buf_width<<1) >> xdec;
+      pmvx = OD_DIV_POW2_RE(mvx << 1, xdec);
+      pmvy = OD_DIV_POW2_RE(mvy << 1, ydec);
+      pbx = (bx + (1 << xdec) - 1) & ~((1 << xdec) - 1);
+      pby = (by + (1 << ydec) - 1) & ~((1 << ydec) - 1);
+      dx = (pbx << 1 >> xdec) + pmvx;
+      dy = (pby << 1 >> ydec) + pmvy;
+      ret += od_enc_sad_ref(est->enc, iplane + dy*ystride + dx,
+       ystride << 1, 2, pli, pbx, pby, log_mvb_sz + 2) >>
        OD_MC_CHROMA_SCALE;
     }
   }
@@ -982,7 +1047,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
      x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
   }
 #endif
-  best_sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+  best_sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
   best_rate = od_mv_est_bits(est, equal_mvs,
    candx << 1, candy << 1, predx, predy);
   best_cost = (best_sad << OD_ERROR_SCALE) + best_rate*est->lambda;
@@ -1037,7 +1102,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
          x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
       }
 #endif
-      sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+      sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
       rate = od_mv_est_bits(est, equal_mvs,
        candx << 1, candy << 1, predx, predy);
       cost = (sad << OD_ERROR_SCALE) + rate*est->lambda;
@@ -1084,7 +1149,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
            x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
         }
 #endif
-        sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+        sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
         rate = od_mv_est_bits(est, equal_mvs,
          candx << 1, candy << 1, predx, predy);
         cost = (sad << OD_ERROR_SCALE) + rate*est->lambda;
@@ -1143,7 +1208,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
                x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
             }
 #endif
-            sad = od_mv_est_bma_sad8(est,
+            sad = od_mv_est_bma_sad(est,
              ref, bx, by, candx, candy, log_mvb_sz);
             rate = od_mv_est_bits(est, equal_mvs,
              candx << 1, candy << 1, predx, predy);

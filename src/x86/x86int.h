@@ -1,5 +1,5 @@
 /*Daala video codec
-Copyright (c) 2006-2010 Daala project contributors.  All rights reserved.
+Copyright (c) 2006-2015 Daala project contributors.  All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -34,13 +34,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
 void od_state_opt_vtbl_init_x86(od_state *_state);
 
-void od_mc_predict1fmv8_sse2(unsigned char *_dst,const unsigned char *_src,
+#if (OD_REFERENCE_BYTES==1)
+void od_mc_predict1fmv8_sse2(od_reftype *_dst,const od_reftype *_src,
  int _systride,ogg_int32_t _mvx,ogg_int32_t _mvy,
  int _log_xblk_sz,int _log_yblk_sz);
-void od_mc_blend_full8_sse2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _log_xblk_sz,int _log_yblk_sz);
-void od_mc_blend_full_split8_sse2(unsigned char *_dst,int _dystride,
- const unsigned char *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz);
+void od_mc_blend_full8_sse2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _log_xblk_sz,int _log_yblk_sz);
+void od_mc_blend_full_split8_sse2(od_reftype *_dst,int _dystride,
+ const od_reftype *_src[4],int _c,int _s,int _log_xblk_sz,int _log_yblk_sz);
+#endif
+
 void od_bin_fdct4x4_sse2(od_coeff *y, int ystride,
  const od_coeff *x, int xstride);
 void od_bin_fdct4x4_sse41(od_coeff *y, int ystride,

@@ -939,7 +939,7 @@ static int od_encode_recursive(daala_enc_ctx *enc, od_mb_enc_ctx *ctx,
       for (i = 0; i < n; i++) {
         for (j = 0; j < n; j++) ctx->c[bo + i*w + j] = c_orig[n*i + j];
       }
-      if (rdo_only && ctx->is_keyframe) {
+      if (ctx->is_keyframe) {
         int bits;
         OD_ASSERT(ctx->dc_rate_idx < OD_NB_SAVED_DC_RATES);
         bits = (ctx->dc_rate[ctx->dc_rate_idx++] + 4)/8;
@@ -1102,22 +1102,45 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((2851196 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 56));
+  {
+    int i,j;
+    for(i = 0; i <= (enc->state.nvmbs + 1) << 2; i++)
+      for(j = 0; j <= (enc->state.nhmbs + 1) << 2; j++)
+        memset(&(enc->state.mv_grid[i][j]),0,sizeof(enc->state.mv_grid[i][j]));
+  }
   od_state_mc_predict(&enc->state, OD_FRAME_PREV);
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
+  /*Blocksize analysis currently also needs the compensated reference
+    in an od_img (specifically  OD_FRAME_REC).*/
   for (pli = 0; pli < nplanes; pli++) {
+    int x;
+    int y;
     od_img_plane plane;
+    int coeff_shift;
     *&plane = *(enc->state.io_imgs[OD_FRAME_REC].planes + pli);
+    coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+    for (y = 0; y < frame_height >> plane.ydec; y++) {
+      for (x = 0; x < frame_width >> plane.xdec; x++) {
+#if OD_REFERENCE_BYTES==1
+        plane.data[y*plane.ystride + x] =
+          enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x];
+          /* if full-precision reference is disabled, we need to shift mctmp */
+        enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] =
+         (enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] - 128)
+         << coeff_shift;
+#else
+        plane.data[y*plane.ystride + x] =
+         OD_CLAMP255(((enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x]
+                       + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
+#endif
+      }
+    }
     od_img_plane_edge_ext8(&plane, frame_width >> plane.xdec,
      frame_height >> plane.ydec, OD_UMV_PADDING >> plane.xdec,
      OD_UMV_PADDING >> plane.ydec);
   }
-#if defined(OD_DUMP_IMAGES)
-  /*Dump reconstructed frame.*/
-  /*od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");*/
-  od_state_fill_vis(&enc->state);
-  od_state_dump_img(&enc->state, &enc->state.vis_img, "vis");
-#endif
+  od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");
 }
 
 #if OD_DISABLE_FIXED_LAPPING
@@ -1335,7 +1358,6 @@ static void od_encode_mvs(daala_enc_ctx *enc) {
         }
       }
       else if (vx < 2 || vx > nhmvbs - 2) {
-        od_mv_grid_pt *other;
         if ((vy == 3 && grid[vy - 1][vx == 1 ? vx - 1 : vx + 1].valid)
          || (vy == nvmvbs - 3
           && grid[vy + 1][vx == 1 ? vx - 1 : vx + 1].valid)) {
@@ -1414,12 +1436,11 @@ static void od_encode_mvs(daala_enc_ctx *enc) {
 
 #define OD_ENCODE_REAL (0)
 #define OD_ENCODE_RDO (1)
-static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
- int rdo_only) {
+
+static void od_encode_residual_setup(daala_enc_ctx *enc,
+ od_mb_enc_ctx *mbctx) {
   int xdec;
   int ydec;
-  int sby;
-  int sbx;
   int h;
   int w;
   int y;
@@ -1432,7 +1453,6 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
   int nvsb;
   od_state *state = &enc->state;
   nplanes = state->info.nplanes;
-  if (rdo_only) nplanes = 1;
   frame_width = state->frame_width;
   frame_height = state->frame_height;
   nhsb = state->nhsb;
@@ -1456,21 +1476,15 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
     /*Collect the image data needed for this plane.*/
     {
       unsigned char *data;
-      unsigned char *mdata;
       int ystride;
       int coeff_shift;
       coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
       data = state->io_imgs[OD_FRAME_INPUT].planes[pli].data;
-      mdata = state->io_imgs[OD_FRAME_REC].planes[pli].data;
       ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
       for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
           state->ctmp[pli][y*w + x] = (data[ystride*y + x] - 128) <<
            coeff_shift;
-          if (!mbctx->is_keyframe) {
-            state->mctmp[pli][y*w + x] = (mdata[ystride*y + x] - 128)
-             << coeff_shift;
-          }
         }
       }
     }
@@ -1490,6 +1504,84 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
     }
 #endif
   }
+}
+
+static void od_encode_residual_resetup(daala_enc_ctx *enc) {
+  int xdec;
+  int ydec;
+  int h;
+  int w;
+  int y;
+  int x;
+  int pli;
+  int nplanes;
+  int frame_width;
+  int frame_height;
+  int nhsb;
+  int nvsb;
+  od_state *state = &enc->state;
+  nplanes = state->info.nplanes;
+  frame_width = state->frame_width;
+  frame_height = state->frame_height;
+  nhsb = state->nhsb;
+  nvsb = state->nvsb;
+  for (pli = 0; pli < nplanes; pli++) {
+    xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
+    ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
+    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_FRAME);
+    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_FRAME);
+    /* TODO: We shouldn't be encoding the full, linear quantizer range. */
+    od_ec_enc_uint(&enc->ec, enc->quantizer[pli], 512<<OD_COEFF_SHIFT);
+    /*If the quantizer is zero (lossless), force scalar.*/
+    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_UNKNOWN);
+    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_UNKNOWN);
+  }
+  for (pli = 0; pli < nplanes; pli++) {
+    xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
+    ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
+    w = frame_width >> xdec;
+    h = frame_height >> ydec;
+    /*Collect the image data needed for this plane.*/
+    {
+      unsigned char *data;
+      int ystride;
+      int coeff_shift;
+      coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+      data = state->io_imgs[OD_FRAME_INPUT].planes[pli].data;
+      ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+          state->ctmp[pli][y*w + x] = (data[ystride*y + x] - 128) <<
+           coeff_shift;
+        }
+      }
+    }
+#if OD_DISABLE_FIXED_LAPPING
+    /*Apply the prefilter across the entire image.*/
+    od_apply_prefilter_frame(state->ctmp[pli], w, nhsb, nvsb,
+     state->bsize, state->bstride, xdec);
+#else
+    od_apply_prefilter_frame_sbs(state->ctmp[pli], w, nhsb, nvsb, xdec, ydec);
+#endif
+  }
+}
+
+static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
+ int rdo_only) {
+  int xdec;
+  int ydec;
+  int sby;
+  int sbx;
+  int w;
+  int pli;
+  int nplanes;
+  int nhsb;
+  int nvsb;
+  od_state *state = &enc->state;
+  nplanes = state->info.nplanes;
+  if (rdo_only) nplanes = 1;
+  nhsb = state->nhsb;
+  nvsb = state->nvsb;
   for (sby = 0; sby < nvsb; sby++) {
     for (sbx = 0; sbx < nhsb; sbx++) {
       for (pli = 0; pli < nplanes; pli++) {
@@ -1509,7 +1601,6 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
         xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
         ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
         if (!OD_DISABLE_HAAR_DC && mbctx->is_keyframe) {
-          int w;
           w = enc->state.frame_width;
           if (rdo_only) {
             for (i = 0; i < OD_BSIZE_MAX; i++) {
@@ -1538,33 +1629,54 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
         od_encode_recursive(enc, mbctx, pli, sbx, sby, 3, xdec, ydec,
          rdo_only);
       }
-        OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_UNKNOWN);
+      OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_UNKNOWN);
     }
   }
+}
+
+static void od_encode_residual_complete(daala_enc_ctx *enc,
+                                        od_mb_enc_ctx *mbctx) {
+  int xdec;
+  int ydec;
+  int sby;
+  int sbx;
+  int h;
+  int w;
+  int y;
+  int x;
+  int pli;
+  int nplanes;
+  int frame_width;
+  int frame_height;
+  int nhsb;
+  int nvsb;
+  od_state *state = &enc->state;
+  unsigned char *data;
+  int ystride;
+  int coeff_shift;
+  nplanes = state->info.nplanes;
+  frame_width = state->frame_width;
+  frame_height = state->frame_height;
+  nhsb = state->nhsb;
+  nvsb = state->nvsb;
 #if defined(OD_DUMP_IMAGES)
-  if (!rdo_only) {
-    /*Dump the lapped frame (before the postfilter has been applied)*/
-    for (pli = 0; pli < nplanes; pli++) {
-      unsigned char *data;
-      int ystride;
-      int coeff_shift;
-      xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
-      ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
-      w = frame_width >> xdec;
-      h = frame_height >> ydec;
-      coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
-      data = state->io_imgs[OD_FRAME_REC].planes[pli].data;
-      ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
-      for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-          data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
-           + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
-        }
+  /*Dump the lapped frame (before the postfilter has been applied)*/
+  for (pli = 0; pli < nplanes; pli++) {
+    xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
+    ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
+    w = frame_width >> xdec;
+    h = frame_height >> ydec;
+    coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+    data = state->io_imgs[OD_FRAME_REC].planes[pli].data;
+    ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
+         + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
       }
     }
-    od_state_dump_img(&enc->state, enc->state.io_imgs + OD_FRAME_REC,
-     "lapped");
   }
+  od_state_dump_img(&enc->state, enc->state.io_imgs + OD_FRAME_REC, "lapped");
 #endif
   for (pli = 0; pli < nplanes; pli++) {
     xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
@@ -1578,31 +1690,24 @@ static void od_encode_residual(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
 #else
     od_apply_postfilter_frame_sbs(state->ctmp[pli], w, nhsb, nvsb, xdec, ydec);
 #endif
-    if (!rdo_only) {
-      for (sby = 0; sby < nvsb; sby++) {
-        for (sbx = 0; sbx < nhsb; sbx++) {
-          if (mbctx->is_keyframe && OD_BLOCK_SIZE4x4(enc->state.bsize,
-            enc->state.bstride, sbx << 3, sby << 3) == 3) {
-            int ln;
-            ln = OD_BLOCK_32X32 + 2 - xdec;
-            od_bilinear_smooth(&state->ctmp[pli][(sby << ln)*w + (sbx << ln)],
-             ln, w, enc->quantizer[pli], pli);
-          }
+    for (sby = 0; sby < nvsb; sby++) {
+      for (sbx = 0; sbx < nhsb; sbx++) {
+        if (mbctx->is_keyframe && OD_BLOCK_SIZE4x4(enc->state.bsize,
+         enc->state.bstride, sbx << 3, sby << 3) == 3) {
+          int ln;
+          ln = OD_BLOCK_32X32 + 2 - xdec;
+          od_bilinear_smooth(&state->ctmp[pli][(sby << ln)*w + (sbx << ln)],
+                             ln, w, enc->quantizer[pli], pli);
         }
       }
     }
-    if (!rdo_only) {
-      unsigned char *data;
-      int ystride;
-      int coeff_shift;
-      coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
-      data = state->io_imgs[OD_FRAME_REC].planes[pli].data;
-      ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
-      for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-          data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
-           + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
-        }
+    coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+    data = state->io_imgs[OD_FRAME_REC].planes[pli].data;
+    ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        data[ystride*y + x] = OD_CLAMP255(((state->ctmp[pli][y*w + x]
+         + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
       }
     }
   }
@@ -1837,21 +1942,21 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   if (!mbctx.is_keyframe) {
     od_predict_frame(enc);
     od_encode_mvs(enc);
+  }
+  od_encode_residual_setup(enc, &mbctx);
 #if !OD_DISABLE_FIXED_LAPPING
     od_split_superblocks_rdo(enc, &mbctx);
 #else
+  if (!mbctx.is_keyframe) {
     od_split_superblocks(enc, 0);
-#endif
-  }
-  else {
-#if !OD_DISABLE_FIXED_LAPPING
-    od_split_superblocks_rdo(enc, &mbctx);
-#else
+  }else{
     od_split_superblocks(enc, 1);
-#endif
   }
+#endif
   od_encode_block_sizes(enc);
+  od_encode_residual_resetup(enc);
   od_encode_residual(enc, &mbctx, OD_ENCODE_REAL);
+  od_encode_residual_complete(enc, &mbctx);
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)
   /*Dump YUV*/
   od_state_dump_yuv(&enc->state, enc->state.io_imgs + OD_FRAME_REC, "out");
@@ -1860,13 +1965,37 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   od_dump_frame_metrics(&enc->state);
 #endif
   enc->packet_state = OD_PACKET_READY;
-  od_state_upsample8(&enc->state,
+#if OD_REFERENCE_BYTES==1
+  /*If full-precision reference is disabled, we need to shift ctmp
+    down before upscaling into the reference. */
+  {
+    for(pli=0; pli<nplanes; pli++){
+      od_coeff *data;
+      int coeff_shift;
+      int w;
+      int h;
+      int x;
+      int y;
+      w = enc->state.frame_width;
+      h = enc->state.frame_height;
+      coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+      data = enc->state.ctmp[pli];
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+         data[y*w + x] =
+          OD_CLAMP255(((data[y*w + x]
+          + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
+        }
+      }
+    }
+  }
+#endif
+  od_state_upsample(&enc->state,
    enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF],
-   enc->state.io_imgs + OD_FRAME_REC);
+    enc->state.ctmp);
 #if defined(OD_DUMP_IMAGES)
-  /*Dump reference frame.*/
-  /*od_state_dump_img(&enc->state,
-   enc->state.ref_img + enc->state.ref_imigi[OD_FRAME_SELF], "ref");*/
+  od_state_dump_ref(&enc->state,
+   enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF],"up");
 #endif
 #if defined(OD_ACCOUNTING)
   OD_ASSERT(enc->acct.last_frac_bits == od_ec_enc_tell_frac(&enc->ec));
