@@ -488,6 +488,7 @@ static int od_block_encode(daala_enc_ctx *enc, od_mb_enc_ctx *ctx, int ln,
   xdec = enc->state.io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
   frame_width = enc->state.frame_width;
   w = frame_width >> xdec;
+
   bo = (by << 2)*w + (bx << 2);
   c = ctx->c;
   d = ctx->d[pli];
@@ -531,6 +532,7 @@ static int od_block_encode(daala_enc_ctx *enc, od_mb_enc_ctx *ctx, int ln,
       scalar_out[0] = OD_DIV_R0(cblock[0] - predt[0], dc_quant);
     }
   }
+
   OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_AC_COEFFS);
   if (lossless) {
     skip = od_single_band_lossless_encode(enc, ln, scalar_out, cblock, predt,
@@ -554,6 +556,11 @@ static int od_block_encode(daala_enc_ctx *enc, od_mb_enc_ctx *ctx, int ln,
       skip = 0;
     }
     OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_UNKNOWN);
+
+
+
+
+
     scalar_out[0] = scalar_out[0]*dc_quant;
     scalar_out[0] += predt[0];
   }
@@ -1102,12 +1109,12 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((2851196 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 56));
-  {
+  /*{
     int i,j;
     for(i = 0; i <= (enc->state.nvmbs + 1) << 2; i++)
-      for(j = 0; j <= (enc->state.nhmbs + 1) << 2; j++)
-        memset(&(enc->state.mv_grid[i][j]),0,sizeof(enc->state.mv_grid[i][j]));
-  }
+    for(j = 0; j <= (enc->state.nhmbs + 1) << 2; j++)
+    memset(&(enc->state.mv_grid[i][j]),0,sizeof(enc->state.mv_grid[i][j]));
+    }*/
   od_state_mc_predict(&enc->state, OD_FRAME_PREV);
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
@@ -1124,8 +1131,8 @@ static void od_predict_frame(daala_enc_ctx *enc) {
       for (x = 0; x < frame_width >> plane.xdec; x++) {
 #if OD_REFERENCE_BYTES==1
         plane.data[y*plane.ystride + x] =
-          enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x];
-          /* if full-precision reference is disabled, we need to shift mctmp */
+         enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x];
+        /* if full-precision reference is disabled, we need to shift mctmp */
         enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] =
          (enc->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] - 128)
          << coeff_shift;
@@ -1140,7 +1147,7 @@ static void od_predict_frame(daala_enc_ctx *enc) {
      frame_height >> plane.ydec, OD_UMV_PADDING >> plane.xdec,
      OD_UMV_PADDING >> plane.ydec);
   }
-  od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");
+  od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"pred");
 }
 
 #if OD_DISABLE_FIXED_LAPPING
@@ -1460,17 +1467,6 @@ static void od_encode_residual_setup(daala_enc_ctx *enc,
   for (pli = 0; pli < nplanes; pli++) {
     xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
     ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
-    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_FRAME);
-    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_FRAME);
-    /* TODO: We shouldn't be encoding the full, linear quantizer range. */
-    od_ec_enc_uint(&enc->ec, enc->quantizer[pli], 512<<OD_COEFF_SHIFT);
-    /*If the quantizer is zero (lossless), force scalar.*/
-    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_TECHNIQUE, OD_ACCT_TECH_UNKNOWN);
-    OD_ENC_ACCT_UPDATE(enc, OD_ACCT_CAT_PLANE, OD_ACCT_PLANE_UNKNOWN);
-  }
-  for (pli = 0; pli < nplanes; pli++) {
-    xdec = state->io_imgs[OD_FRAME_INPUT].planes[pli].xdec;
-    ydec = state->io_imgs[OD_FRAME_INPUT].planes[pli].ydec;
     w = frame_width >> xdec;
     h = frame_height >> ydec;
     /*Collect the image data needed for this plane.*/
@@ -1488,15 +1484,7 @@ static void od_encode_residual_setup(daala_enc_ctx *enc,
         }
       }
     }
-#if OD_DISABLE_FIXED_LAPPING
-    /*Apply the prefilter across the entire image.*/
-    od_apply_prefilter_frame(state->ctmp[pli], w, nhsb, nvsb,
-     state->bsize, state->bstride, xdec);
-    if (!mbctx->is_keyframe) {
-      od_apply_prefilter_frame(state->mctmp[pli], w, nhsb, nvsb,
-       state->bsize, state->bstride, xdec);
-    }
-#else
+#if !OD_DISABLE_FIXED_LAPPING
     od_apply_prefilter_frame_sbs(state->ctmp[pli], w, nhsb, nvsb, xdec, ydec);
     if (!mbctx->is_keyframe) {
       od_apply_prefilter_frame_sbs(state->mctmp[pli], w, nhsb, nvsb, xdec,
@@ -1506,7 +1494,8 @@ static void od_encode_residual_setup(daala_enc_ctx *enc,
   }
 }
 
-static void od_encode_residual_resetup(daala_enc_ctx *enc) {
+ static void od_encode_residual_writesetup(daala_enc_ctx *enc,
+ od_mb_enc_ctx *mbctx) {
   int xdec;
   int ydec;
   int h;
@@ -1560,6 +1549,10 @@ static void od_encode_residual_resetup(daala_enc_ctx *enc) {
     /*Apply the prefilter across the entire image.*/
     od_apply_prefilter_frame(state->ctmp[pli], w, nhsb, nvsb,
      state->bsize, state->bstride, xdec);
+    if (!mbctx->is_keyframe) {
+      od_apply_prefilter_frame(state->mctmp[pli], w, nhsb, nvsb,
+       state->bsize, state->bstride, xdec);
+    }
 #else
     od_apply_prefilter_frame_sbs(state->ctmp[pli], w, nhsb, nvsb, xdec, ydec);
 #endif
@@ -1945,16 +1938,12 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   }
   od_encode_residual_setup(enc, &mbctx);
 #if !OD_DISABLE_FIXED_LAPPING
-    od_split_superblocks_rdo(enc, &mbctx);
+  od_split_superblocks_rdo(enc, &mbctx);
 #else
-  if (!mbctx.is_keyframe) {
-    od_split_superblocks(enc, 0);
-  }else{
-    od_split_superblocks(enc, 1);
-  }
+  od_split_superblocks(enc, mbctx.is_keyframe);
 #endif
   od_encode_block_sizes(enc);
-  od_encode_residual_resetup(enc);
+  od_encode_residual_writesetup(enc, &mbctx);
   od_encode_residual(enc, &mbctx, OD_ENCODE_REAL);
   od_encode_residual_complete(enc, &mbctx);
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)

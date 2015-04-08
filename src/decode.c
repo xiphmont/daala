@@ -699,10 +699,8 @@ static void od_decode_residual(od_dec_ctx *dec, od_mb_dec_ctx *mbctx) {
       od_apply_prefilter_frame(state->mctmp[pli], w, nhsb, nvsb,
        state->bsize, state->bstride, xdec);
 #else
-      if (!mbctx->is_keyframe) {
-        od_apply_prefilter_frame_sbs(state->mctmp[pli], w, nhsb, nvsb, xdec,
-         ydec);
-      }
+      od_apply_prefilter_frame_sbs(state->mctmp[pli], w, nhsb, nvsb, xdec,
+       ydec);
 #endif
     }
   }
@@ -776,6 +774,13 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
  const ogg_packet *op) {
   int refi;
   od_mb_dec_ctx mbctx;
+  int nplanes;
+  int pli;
+  int frame_width;
+  int frame_height;
+  nplanes = dec->state.info.nplanes;
+  frame_width = dec->state.frame_width;
+  frame_height = dec->state.frame_height;
   if (dec == NULL || img == NULL || op == NULL) return OD_EFAULT;
   if (dec->packet_state != OD_PACKET_DATA) return OD_EINVAL;
   if (op->e_o_s) dec->packet_state = OD_PACKET_DONE;
@@ -784,9 +789,6 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
   if (od_ec_decode_bool_q15(&dec->ec, 16384)) return OD_EBADPACKET;
   mbctx.is_keyframe = od_ec_decode_bool_q15(&dec->ec, 16384);
   if (mbctx.is_keyframe) {
-    int nplanes;
-    int pli;
-    nplanes = dec->state.info.nplanes;
     for (pli = 0; pli < nplanes; pli++) {
       int i;
       for (i = 0; i < OD_QM_SIZE; i++) {
@@ -814,6 +816,32 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
   if (!mbctx.is_keyframe) {
     od_dec_mv_unpack(dec);
     od_state_mc_predict(&dec->state, OD_FRAME_PREV);
+
+    for (pli = 0; pli < nplanes; pli++) {
+      int x;
+      int y;
+      od_img_plane plane;
+      int coeff_shift;
+      *&plane = *(dec->state.io_imgs[OD_FRAME_REC].planes + pli);
+      coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+      for (y = 0; y < frame_height >> plane.ydec; y++) {
+        for (x = 0; x < frame_width >> plane.xdec; x++) {
+#if OD_REFERENCE_BYTES==1
+          plane.data[y*plane.ystride + x] =
+            dec->state.mctmp[pli][y*(frame_width >> plane.xdec) + x];
+          /* if full-precision reference is disabled, we need to shift mctmp */
+          dec->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] =
+           (dec->state.mctmp[pli][y*(frame_width >> plane.xdec) + x] - 128)
+           << coeff_shift;
+#else
+          plane.data[y*plane.ystride + x] =
+           OD_CLAMP255(((dec->state.mctmp[pli][y*(frame_width >> plane.xdec) + x]
+           + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
+#endif
+        }
+      }
+    }
+    od_state_dump_img(&dec->state,dec->state.io_imgs + OD_FRAME_REC,"decpred");
   }
   od_decode_block_sizes(dec);
   od_decode_residual(dec, &mbctx);
@@ -823,27 +851,22 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
 #endif
 #if OD_REFERENCE_BYTES==1
   /* if full-precision reference is disabled, we need to shift ctmp down before upscaling into the reference */
-  {
-    int nplanes;
-    int pli;
-    nplanes = dec->state.info.nplanes;
-    for(pli=0; pli<nplanes; pli++){
-      od_coeff *data;
-      int coeff_shift;
-      int w;
-      int h;
-      int x;
-      int y;
-      w = dec->state.frame_width;
-      h = dec->state.frame_height;
-      coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
-      data = dec->state.ctmp[pli];
-      for (y = 0; y < h; y++) {
-        for (x = 0; x < w; x++) {
-         data[y*w + x] =
-          OD_CLAMP255(((data[y*w + x]
-          + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
-        }
+  for(pli=0; pli<nplanes; pli++){
+    od_coeff *data;
+    int coeff_shift;
+    int w;
+    int h;
+    int x;
+    int y;
+    w = dec->state.frame_width;
+    h = dec->state.frame_height;
+    coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
+    data = dec->state.ctmp[pli];
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        data[y*w + x] =
+         OD_CLAMP255(((data[y*w + x]
+         + (1 << coeff_shift >> 1)) >> coeff_shift) + 128);
       }
     }
   }
