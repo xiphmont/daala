@@ -841,7 +841,9 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
         }
       }
     }
+#if defined(OD_DUMP_IMAGES)
     od_state_dump_img(&dec->state,dec->state.io_imgs + OD_FRAME_REC,"decpred");
+#endif
   }
   od_decode_block_sizes(dec);
   od_decode_residual(dec, &mbctx);

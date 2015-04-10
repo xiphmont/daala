@@ -63,18 +63,26 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 # define OD_DISABLE_MASKING (0)
 # define OD_DISABLE_QM (0)
 # define OD_DISABLE_FIXED_LAPPING (0)
+# define OD_DISABLE_FULL_PRECISION_REFERENCES (0)
 
 # define OD_ROBUST_STREAM (0)
 
 # define OD_COEFF_SHIFT (4)
-# define OD_REFERENCE_BITS (8)
-# define OD_REFERENCE_BYTES (1)
+
+# if OD_DISABLE_FULL_PRECISION_REFERENCES
+#  define OD_REFERENCE_BITS (8)
+#  define OD_REFERENCE_BYTES (1)
 typedef unsigned char od_reftype;
+# else
+#  define OD_REFERENCE_BITS (12)
+#  define OD_REFERENCE_BYTES (2)
+typedef ogg_int16_t od_reftype;
+# endif
 
 # if (OD_REFERENCE_BYTES==1)
 #  define OD_CLAMPREF(x) (OD_CLAMP255(x))
 # else
-#  define OD_CLAMPREF(x) ((od_reftype)(OD_CLAMPI(-32768,(x),32767))
+#  define OD_CLAMPREF(x) ((od_reftype)(OD_CLAMPI(-32768,(x),32767)))
 #endif
 
 /*OD_QUALITY_SHIFT specifies the number of fractional bits in a

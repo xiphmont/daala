@@ -794,8 +794,8 @@ static void od_quantize_haar_dc(daala_enc_ctx *enc, od_mb_enc_ctx *ctx,
 
 #if !OD_DISABLE_QM
 static int od_compute_var_4x4(od_coeff *x, int stride) {
-  int sum;
-  int s2;
+  ogg_int32_t sum;
+  ogg_int32_t s2;
   int i;
   sum = 0;
   s2 = 0;
@@ -808,7 +808,7 @@ static int od_compute_var_4x4(od_coeff *x, int stride) {
       s2 += t*t;
     }
   }
-  return (s2 - (sum*sum >> 4)) >> 4;
+  return (s2 - ((ogg_int64_t)sum*sum >> 4)) >> 4;
 }
 
 static double od_compute_dist_8x8(daala_enc_ctx *enc, od_coeff *x, od_coeff *y,
@@ -1147,7 +1147,9 @@ static void od_predict_frame(daala_enc_ctx *enc) {
      frame_height >> plane.ydec, OD_UMV_PADDING >> plane.xdec,
      OD_UMV_PADDING >> plane.ydec);
   }
+#if defined(OD_DUMP_IMAGES)
   od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"pred");
+#endif
 }
 
 #if OD_DISABLE_FIXED_LAPPING
