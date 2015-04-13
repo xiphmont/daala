@@ -1967,8 +1967,8 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
       int h;
       int x;
       int y;
-      w = enc->state.frame_width;
-      h = enc->state.frame_height;
+      w = enc->state.frame_width >> enc->state.info.plane_info[pli].xdec;
+      h = enc->state.frame_height >> enc->state.info.plane_info[pli].ydec;
       coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
       data = enc->state.ctmp[pli];
       for (y = 0; y < h; y++) {

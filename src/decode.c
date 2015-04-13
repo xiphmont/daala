@@ -860,8 +860,8 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
     int h;
     int x;
     int y;
-    w = dec->state.frame_width;
-    h = dec->state.frame_height;
+    w = dec->state.frame_width >> dec->state.info.plane_info[pli].xdec;
+    h = dec->state.frame_height >> dec->state.info.plane_info[pli].ydec;
     coeff_shift = dec->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
     data = dec->state.ctmp[pli];
     for (y = 0; y < h; y++) {
