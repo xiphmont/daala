@@ -227,7 +227,20 @@ static ogg_int32_t od_enc_sad(od_enc_ctx *enc, const od_reftype *p,
     return (*enc->opt_vtbl.mc_compute_sad_16x16_xstride_1)(src, iplane->ystride,
      p, pystride);
   }
-#endif
+  /*Default C implementation.*/
+  ret = 0;
+  p0 = p;
+  for (j = 0; j < h; j++) {
+    p = p0;
+    for (i = 0; i < w; i++) {
+      ret += abs(p[0] - src[i]);
+      p += pxstride;
+    }
+    src += iplane->ystride;
+    p0 += pystride;
+  }
+  return ret;
+#else
   /*Default C implementation.*/
   ret = 0;
   p0 = p;
@@ -241,6 +254,7 @@ static ogg_int32_t od_enc_sad(od_enc_ctx *enc, const od_reftype *p,
     p0 += pystride;
   }
   return (ret>>4);
+#endif
 }
 
 static int od_mv_est_init_impl(od_mv_est_ctx *est, od_enc_ctx *enc) {
