@@ -253,7 +253,7 @@ static ogg_int32_t od_enc_sad(od_enc_ctx *enc, const od_reftype *p,
     src += iplane->ystride;
     p0 += pystride;
   }
-  return (ret>>4);
+  return ((ret+8)>>4);
 #endif
 }
 
