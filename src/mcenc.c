@@ -32,6 +32,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <limits.h>
 #include <string.h>
 
+#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
+#define UP(x) (((OD_CLAMP255(x))-128)<<4)
+
 /*Encoder-only motion compensation routines.*/
 
 /*TODO:
@@ -247,13 +250,13 @@ static ogg_int32_t od_enc_sad(od_enc_ctx *enc, const od_reftype *p,
   for (j = 0; j < h; j++) {
     p = p0;
     for (i = 0; i < w; i++) {
-      ret += abs(p[0] - (((int)(src[i])-128)<<4));
+      ret += abs(DOWN(p[0]) - src[i]);
       p += pxstride;
     }
     src += iplane->ystride;
     p0 += pystride;
   }
-  return ((ret+8)>>4);
+  return ret;
 #endif
 }
 
@@ -275,7 +278,7 @@ static int od_mv_est_init_impl(od_mv_est_ctx *est, od_enc_ctx *enc) {
     return OD_EFAULT;
   }
   est->sad_cache[0] = (od_sad4 **)od_malloc_2d(nvmvbs, nhmvbs,
-   sizeof(est->sad_cache[1][0][0]));
+   sizeof(est->sad_cache[0][0][0]));
   if (OD_UNLIKELY(!est->sad_cache[0])) {
     return OD_EFAULT;
   }
@@ -704,7 +707,7 @@ static ogg_int32_t od_mv_est_bma_sad(od_mv_est_ctx *est,
    ystride << 1, 2, 0, pbx, pby, log_mvb_sz + 2);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
-    for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
+    for (pli = 1; pli < state->info.nplanes; pli++) {
       iplane = state->ref_imgs[refi].planes[pli];
       xdec = state->info.plane_info[pli].xdec;
       ydec = state->info.plane_info[pli].ydec;
@@ -735,7 +738,7 @@ static ogg_int32_t od_mv_est_sad(od_mv_est_ctx *est,
    (vx - 2) << 2, (vy - 2) << 2, log_mvb_sz + 2);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
-    for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
+    for (pli = 1; pli < state->info.nplanes; pli++) {
       od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MCBSIZE_MAX, ref, pli,
        vx, vy, oc, s, log_mvb_sz);
       ret += od_enc_sad(est->enc, state->mc_buf[4], OD_MCBSIZE_MAX, 1, pli,
@@ -1544,6 +1547,7 @@ static void od_mv_dec_heapify(od_mv_est_ctx *est) {
   for (i = l; i-- > 0;) {
     int p;
     p = i;
+
     do {
       int q;
       q = (p << 1) + 1;
@@ -4074,10 +4078,6 @@ void od_mv_subpel_refine(od_mv_est_ctx *est, int ref, int cost_thresh) {
   state = &est->enc->state;
   nhmvbs = (state->nhmbs + 1) << 2;
   nvmvbs = (state->nvmbs + 1) << 2;
-  /*Save the fullpell MVs now for use by EPZS^2 on the next frame.
-    We could also try rounding the results after refinement, I guess.
-    I'm not sure it makes much difference*/
-  od_mv_est_update_fullpel_mvs(est, ref);
   complexity = est->enc->complexity;
   if (complexity >= OD_MC_SQUARE_SUBPEL_REFINEMENT_COMPLEXITY) {
     pattern_nsites = OD_SQUARE_NSITES;
@@ -4220,7 +4220,7 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
     dcost = 0;
     /*Logarithmic (telescoping) search.
       This is 3x more expensive than basic refinement, but can help escape
-       local minima.*/
+      local minima.*/
     if (complexity >= OD_MC_LOGARITHMIC_REFINEMENT_COMPLEXITY) {
       dcost += od_mv_est_refine(est, ref, 5, 2, pattern_nsites, pattern);
       dcost += od_mv_est_refine(est, ref, 4, 2, pattern_nsites, pattern);
@@ -4228,6 +4228,10 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
     dcost += od_mv_est_refine(est, ref, 3, 2, pattern_nsites, pattern);
   }
   while (dcost < cost_thresh);
+  /*Save the fullpell MVs now for use by EPZS^2 on the next frame.
+    We could also try rounding the results after refinement, I guess.
+    I'm not sure it makes much difference*/
+  od_mv_est_update_fullpel_mvs(est, ref);
   od_mv_subpel_refine(est, ref, cost_thresh);
   od_restore_fpu(state);
 }

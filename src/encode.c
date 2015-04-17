@@ -1685,7 +1685,7 @@ static void od_encode_residual_complete(daala_enc_ctx *enc,
 #else
     od_apply_postfilter_frame_sbs(state->ctmp[pli], w, nhsb, nvsb, xdec, ydec);
 #endif
-    /*for (sby = 0; sby < nvsb; sby++) {
+    for (sby = 0; sby < nvsb; sby++) {
       for (sbx = 0; sbx < nhsb; sbx++) {
         if (mbctx->is_keyframe && OD_BLOCK_SIZE4x4(enc->state.bsize,
          enc->state.bstride, sbx << 3, sby << 3) == 3) {
@@ -1695,7 +1695,7 @@ static void od_encode_residual_complete(daala_enc_ctx *enc,
                              ln, w, enc->quantizer[pli], pli);
         }
       }
-      }*/
+    }
     coeff_shift = enc->quantizer[pli] == 0 ? 0 : OD_COEFF_SHIFT;
     data = state->io_imgs[OD_FRAME_REC].planes[pli].data;
     ystride = state->io_imgs[OD_FRAME_INPUT].planes[pli].ystride;
