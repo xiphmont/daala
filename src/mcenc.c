@@ -32,9 +32,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <limits.h>
 #include <string.h>
 
-#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (((OD_CLAMP255(x))-128)<<4)
-
 /*Encoder-only motion compensation routines.*/
 
 /*TODO:
@@ -42,6 +39,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
  - Thresholds for DP.
    + How do we calculate them?
    + How do they propagate between frames (block sizes change)*/
+
+#define DOWN(x) (((x)+(1<<4>>1))>>4)
 
 /*The frame number to animate.*/
 #if defined(OD_DUMP_IMAGES) && defined(OD_ANIMATE)
@@ -250,13 +249,13 @@ static ogg_int32_t od_enc_sad(od_enc_ctx *enc, const od_reftype *p,
   for (j = 0; j < h; j++) {
     p = p0;
     for (i = 0; i < w; i++) {
-      ret += abs(DOWN(p[0]) - src[i]);
+      ret += abs(p[0] - ((src[i]-128)<<4));
       p += pxstride;
     }
     src += iplane->ystride;
     p0 += pystride;
   }
-  return ret;
+  return DOWN(ret);
 #endif
 }
 
