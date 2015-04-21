@@ -36,10 +36,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #endif
 #include "block_size.h"
 
-#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (((OD_CLAMP255(x))-128)<<4)
-#define OD_CLAMPTEST(x) OD_CLAMP255(x)
-
 /* OD_DC_RES[i] adjusts the quantization of DC for the ith plane.
    These values are based on manual tuning to optimize PSNR-HVS, while also
    attempting to keep a good visual balance between the relative resolution
@@ -464,42 +460,42 @@ void od_state_upsample(od_state *state, od_reference *dimg,
         buf = state->ref_line_buf[y & 7];
         /*memset(buf, src[0], ((xpad - 2) << 1) * sizeof(*buf));*/
         for (x = -xpad; x < -2; x++) {
-          *(buf + (x << 1)) = DOWN(src[0]);
-          *(buf + (x << 1 | 1)) = DOWN(src[0]);
+          *(buf + (x << 1)) = OD_CLAMPREF(src[0]);
+          *(buf + (x << 1 | 1)) = OD_CLAMPREF(src[0]);
         }
-        *(buf - 4) = DOWN(src[0]);
-        *(buf - 3) = OD_CLAMPTEST((31*DOWN(src[0]) + DOWN(src[1]) + 16) >> 5);
-        *(buf - 2) = DOWN(src[0]);
-        *(buf - 1) = OD_CLAMPTEST((36*DOWN(src[0]) - 5*DOWN(src[1]) + DOWN(src[1]) + 16) >> 5);
-        buf[0] = DOWN(src[0]);
-        buf[1] = OD_CLAMPTEST((20*(DOWN(src[0]) + DOWN(src[1]))
-                             - 5*(DOWN(src[0]) + DOWN(src[2])) + DOWN(src[0]) + DOWN(src[3]) + 16) >> 5);
-        buf[2] = DOWN(src[1]);
-        buf[3] = OD_CLAMPTEST((20*(DOWN(src[1]) + DOWN(src[2]))
-                             - 5*(DOWN(src[0]) + DOWN(src[3])) + DOWN(src[0]) + DOWN(src[4]) + 16) >> 5);
+        *(buf - 4) = OD_CLAMPREF(src[0]);
+        *(buf - 3) = OD_CLAMPREF((31*src[0] + src[1] + 16) >> 5);
+        *(buf - 2) = OD_CLAMPREF(src[0]);
+        *(buf - 1) = OD_CLAMPREF((36*src[0] - 5*src[1] + src[1] + 16) >> 5);
+        buf[0] = OD_CLAMPREF(src[0]);
+        buf[1] = OD_CLAMPREF((20*(src[0] + src[1])
+         - 5*(src[0] + src[2]) + src[0] + src[3] + 16) >> 5);
+        buf[2] = OD_CLAMPREF(src[1]);
+        buf[3] = OD_CLAMPREF((20*(src[1] + src[2])
+         - 5*(src[0] + src[3]) + src[0] + src[4] + 16) >> 5);
         for (x = 2; x < w - 3; x++) {
-          buf[x << 1] = DOWN(src[x]);
-          buf[x << 1 | 1] = OD_CLAMPTEST((20*(DOWN(src[x]) + DOWN(src[x + 1]))
-                                        - 5*(DOWN(src[x - 1]) + DOWN(src[x + 2])) + DOWN(src[x - 2]) + DOWN(src[x + 3]) + 16) >> 5);
+          buf[x << 1] = OD_CLAMPREF(src[x]);
+          buf[x << 1 | 1] = OD_CLAMPREF((20*(src[x] + src[x + 1])
+           - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 3] + 16) >> 5);
         }
-        buf[x << 1] = DOWN(src[x]);
-        buf[x << 1 | 1] = OD_CLAMPTEST((20*(DOWN(src[x]) + DOWN(src[x + 1]))
-                                      - 5*(DOWN(src[x - 1]) + DOWN(src[x + 2])) + DOWN(src[x - 2]) + DOWN(src[x + 2]) + 16) >> 5);
+        buf[x << 1] = OD_CLAMPREF(src[x]);
+        buf[x << 1 | 1] = OD_CLAMPREF((20*(src[x] + src[x + 1])
+         - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 2] + 16) >> 5);
         x++;
-        buf[x << 1] = DOWN(src[x]);
-        buf[x << 1 | 1] = OD_CLAMPTEST((20*(DOWN(src[x]) + DOWN(src[x + 1]))
-                                      - 5*(DOWN(src[x - 1]) + DOWN(src[x + 1])) + DOWN(src[x - 2]) + DOWN(src[x + 1]) + 16) >> 5);
+        buf[x << 1] = OD_CLAMPREF(src[x]);
+        buf[x << 1 | 1] = OD_CLAMPREF((20*(src[x] + src[x + 1])
+         - 5*(src[x - 1] + src[x + 1]) + src[x - 2] + src[x + 1] + 16) >> 5);
         x++;
-        buf[x << 1] = DOWN(src[x]);
-        buf[x << 1 | 1] = OD_CLAMPTEST((36*DOWN(src[x])
-                                      - 5*DOWN(src[x - 1]) + DOWN(src[x - 2]) + 16) >> 5);
+        buf[x << 1] = OD_CLAMPREF(src[x]);
+        buf[x << 1 | 1] = OD_CLAMPREF((36*src[x]
+         - 5*src[x - 1] + src[x - 2] + 16) >> 5);
         x++;
-        buf[x << 1] = DOWN(src[w - 1]);
-        buf[x << 1 | 1] = OD_CLAMPTEST((31*DOWN(src[w - 1]) + DOWN(src[w - 2]) + 16) >> 5);
+        buf[x << 1] = OD_CLAMPREF(src[w - 1]);
+        buf[x << 1 | 1] = OD_CLAMPREF((31*src[w - 1] + src[w - 2] + 16) >> 5);
         /*memset(buf + (++x << 1), src[w - 1], ((xpad - 1) << 1) * sizeof(*buf));*/
         for (x++; x < w + xpad; x++) {
-          buf[x << 1] = DOWN(src[w - 1]);
-          buf[x << 1 | 1] = DOWN(src[w - 1]);
+          buf[x << 1] = OD_CLAMPREF(src[w - 1]);
+          buf[x << 1 | 1] = OD_CLAMPREF(src[w - 1]);
         }
         if (y >= 0 && y + 1 < h) src += w;
       }
@@ -510,7 +506,7 @@ void od_state_upsample(od_state *state, od_reference *dimg,
             state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
             (w + (xpad << 1)) << 1);*/
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst+x) = UP(*(state->ref_line_buf[(y - 3) & 7]+x));
+            *(dst+x) = *(state->ref_line_buf[(y - 3) & 7]+x);
           }
           /*fprintf(stderr, "%3i: ", (y - 3) << 1);
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
@@ -522,7 +518,7 @@ void od_state_upsample(od_state *state, od_reference *dimg,
                   state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
                   (w + (xpad << 1)) << 1);*/
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst+x) = UP(*(state->ref_line_buf[(y - 3) & 7]+x));
+            *(dst+x) = *(state->ref_line_buf[(y - 3) & 7]+x);
           }
           /*fprintf(stderr, "%3i: ", (y - 3) << 1 | 1);
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
@@ -540,7 +536,7 @@ void od_state_upsample(od_state *state, od_reference *dimg,
           buf[4] = state->ref_line_buf[(y - 1) & 7];
           buf[5] = state->ref_line_buf[(y - 0) & 7];
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst+x) = UP(*(state->ref_line_buf[(y - 3) & 7]+x));
+            *(dst+x) = *(state->ref_line_buf[(y - 3) & 7]+x);
           }
           /*OD_COPY(dst - (xpad << 1),
                   state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
@@ -552,8 +548,8 @@ void od_state_upsample(od_state *state, od_reference *dimg,
           fprintf(stderr, "\n");*/
           dst += (state->frame_buf_width << 1) >> xdec;
           for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst + x) = UP(
-             (20*(*(buf[2] + x) + *(buf[3] + x))
+            *(dst + x) = OD_CLAMPREF(
+             ((ogg_int32_t)20*(*(buf[2] + x) + *(buf[3] + x))
              - 5*(*(buf[1] + x) + *(buf[4] + x))
              + *(buf[0] + x) + *(buf[5] + x) + 16) >> 5);
           }

@@ -32,8 +32,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "mc.h"
 #include "state.h"
 
-#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (((OD_CLAMP255(x))-128)<<4)
 /*Motion compensation routines shared between the encoder and decoder.*/
 
 /*Form the prediction given by one fixed motion vector.
@@ -59,8 +57,8 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
   xblk_sz = 1 << log_xblk_sz;
   yblk_sz = 1 << log_yblk_sz;
   src += (mvx >> 16) + (mvy >> 16)*systride;
-  mvxf = (mvx & 0xFF00)>>8;
-  mvyf = (mvy & 0xFF00)>>8;
+  mvxf = (mvx & 0xF000)>>12;
+  mvyf = (mvy & 0xF000)>>12;
   if (mvxf != 0) {
     if (mvyf != 0) {
       for (j = 0; j < yblk_sz; j++) {
@@ -70,13 +68,13 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           ogg_int32_t p11;
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
-          p00 = DOWN(src[i<<1]);
-          p01 = DOWN(src[i<<1 | 1]);
-          p10 = DOWN((src + systride)[i<<1]);
-          p11 = DOWN((src + systride)[i<<1 | 1]);
-          a = ((p00 << 8) + (p01 - p00)*mvxf) >> 8;
-          b = ((p10 << 8) + (p11 - p10)*mvxf) >> 8;
-          dst[j*xblk_sz + i] = (od_reftype)UP(((a << 8) + (b - a)*mvyf) >> 8);
+          p00 = src[i<<1];
+          p01 = src[i<<1 | 1];
+          p10 = (src + systride)[i<<1];
+          p11 = (src + systride)[i<<1 | 1];
+          a = ((p00 << 4) + (p01 - p00)*mvxf) >> 4;
+          b = ((p10 << 4) + (p11 - p10)*mvxf) >> 4;
+          dst[j*xblk_sz + i] = OD_CLAMPREF(((a << 4) + (b - a)*mvyf) >> 4);
         }
         src += systride << 1;
       }
@@ -86,10 +84,10 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
         for (i = 0; i < xblk_sz; i++) {
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
-          p00 = DOWN(src[i<<1]);
-          p01 = DOWN(src[i<<1 | 1]);
-          dst[j*xblk_sz + i] = (od_reftype)UP(
-           (((ogg_uint32_t)p00 << 8) + (p01 - p00)*mvxf) >> 8);
+          p00 = src[i<<1];
+          p01 = src[i<<1 | 1];
+          dst[j*xblk_sz + i] = OD_CLAMPREF(
+           ((p00 << 4) + (p01 - p00)*mvxf) >> 4);
         }
         src += systride << 1;
       }
@@ -101,10 +99,10 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
         for (i = 0; i < xblk_sz; i++) {
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
-          p00 = DOWN(src[i<<1]);
-          p10 = DOWN((src + systride)[i<<1]);
-          dst[j*xblk_sz + i] = (od_reftype)UP(
-           (((ogg_uint32_t)p00 << 8) + (p10 - p00)*mvyf) >> 8);
+          p00 = src[i<<1];
+          p10 = (src + systride)[i<<1];
+          dst[j*xblk_sz + i] = OD_CLAMPREF(
+           ((p00 << 4) + (p10 - p00)*mvyf) >> 4);
         }
         src += systride << 1;
       }
@@ -114,7 +112,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
         for (i = 0; i < xblk_sz; i++) {
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
-          dst[j*xblk_sz + i] = UP(DOWN(src[i<<1]));
+          dst[j*xblk_sz + i] = src[i<<1];
         }
         src += systride << 1;
       }
@@ -151,11 +149,11 @@ void od_mc_blend_full_c(od_reftype *dst, int dystride,
     for (i = 0; i < xblk_sz; i++) {
       ogg_int32_t a;
       ogg_int32_t b;
-      a = DOWN(src[0][j*xblk_sz + i]);
-      b = DOWN(src[3][j*xblk_sz + i]);
-      a = (a << log_xblk_sz) + (DOWN(src[1][j*xblk_sz + i]) - a)*i;
-      b = (b << log_xblk_sz) + (DOWN(src[2][j*xblk_sz + i]) - b)*i;
-      dst[i] = (od_reftype)UP(((a << log_yblk_sz) + (b - a)*j + round) >>
+      a = src[0][j*xblk_sz + i];
+      b = src[3][j*xblk_sz + i];
+      a = (a << log_xblk_sz) + (src[1][j*xblk_sz + i] - a)*i;
+      b = (b << log_xblk_sz) + (src[2][j*xblk_sz + i] - b)*i;
+      dst[i] = OD_CLAMPREF(((a << log_yblk_sz) + (b - a)*j + round) >>
        log_blk_sz2);
     }
     dst += dystride;
@@ -766,11 +764,11 @@ void od_mc_blend_full_split_c(od_reftype *dst, int dystride,
       ogg_int32_t b;
       ogg_int32_t c;
       ogg_int32_t d;
-      a = DOWN(src[0][j*xblk_sz + i]);
-      b = (DOWN(src[1][j*xblk_sz + i]) - a)*sw[1];
-      c = (DOWN(src[2][j*xblk_sz + i]) - a)*sw[2];
-      d = (DOWN(src[3][j*xblk_sz + i]) - a)*sw[3];
-      dst[i] = (od_reftype)UP(((a << log_blk_sz2p1)
+      a = src[0][j*xblk_sz + i];
+      b = (src[1][j*xblk_sz + i] - a)*sw[1];
+      c = (src[2][j*xblk_sz + i] - a)*sw[2];
+      d = (src[3][j*xblk_sz + i] - a)*sw[3];
+      dst[i] = OD_CLAMPREF(((a << log_blk_sz2p1)
        + b + c + d + round) >> log_blk_sz2p1);
       /*LOOP VECTORIZES.*/
       for (k = 0; k < 4; k++) sw[k] += dsdi[k];
