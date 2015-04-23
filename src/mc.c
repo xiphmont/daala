@@ -33,7 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "state.h"
 
 #define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (((OD_CLAMP255(x))-128)<<4)
+#define UP(x) (od_reftype)(((OD_CLAMP255(x))-128)<<4)
 /*Motion compensation routines shared between the encoder and decoder.*/
 
 /*Form the prediction given by one fixed motion vector.
@@ -47,36 +47,36 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
  int systride, ogg_int32_t mvx, ogg_int32_t mvy,
  int log_xblk_sz, int log_yblk_sz) {
-  ogg_uint32_t mvxf;
-  ogg_uint32_t mvyf;
+  ogg_int32_t mvxf;
+  ogg_int32_t mvyf;
   int xblk_sz;
   int yblk_sz;
-  int p00;
-  int p01;
-  int p10;
+  ogg_int32_t p00;
+  ogg_int32_t p01;
+  ogg_int32_t p10;
   int i;
   int j;
   xblk_sz = 1 << log_xblk_sz;
   yblk_sz = 1 << log_yblk_sz;
-  src += (mvx >> 16) + (mvy >> 16)*systride;
-  mvxf = (ogg_uint32_t)(mvx & 0xFFFF);
-  mvyf = (ogg_uint32_t)(mvy & 0xFFFF);
+  src += (mvx >> 16) + (mvy >> 4)*systride;
+  mvxf = (mvx & 0xF000) >> 12;
+  mvyf = (mvy & 0xF000) >> 12;
   if (mvxf != 0) {
     if (mvyf != 0) {
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          ogg_uint32_t a;
-          ogg_uint32_t b;
-          int p11;
+          ogg_int32_t a;
+          ogg_int32_t b;
+          ogg_int32_t p11;
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
           p00 = DOWN(src[i<<1]);
           p01 = DOWN(src[i<<1 | 1]);
           p10 = DOWN((src + systride)[i<<1]);
           p11 = DOWN((src + systride)[i<<1 | 1]);
-          a = (((ogg_uint32_t)p00 << 16) + (p01 - p00)*mvxf) >> 16;
-          b = (((ogg_uint32_t)p10 << 16) + (p11 - p10)*mvxf) >> 16;
-          dst[j*xblk_sz + i] = (od_reftype)UP(((a<<16) + (b - a)*mvyf) >> 16);
+          a = ((p00 << 4) + (p01 - p00)*mvxf) >> 4;
+          b = ((p10 << 4) + (p11 - p10)*mvxf) >> 4;
+          dst[j*xblk_sz + i] = UP(((a<<4) + (b - a)*mvyf) >> 4);
         }
         src += systride << 1;
       }
@@ -88,8 +88,8 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
           p00 = DOWN(src[i<<1]);
           p01 = DOWN(src[i<<1 | 1]);
-          dst[j*xblk_sz + i] = (od_reftype)UP(
-           (((ogg_uint32_t)p00 << 16) + (p01 - p00)*mvxf) >> 16);
+          dst[j*xblk_sz + i] = UP(
+           ((p00 << 4) + (p01 - p00)*mvxf) >> 4);
         }
         src += systride << 1;
       }
@@ -103,8 +103,8 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
           p00 = DOWN(src[i<<1]);
           p10 = DOWN((src + systride)[i<<1]);
-          dst[j*xblk_sz + i] = (od_reftype)UP(
-           (((ogg_uint32_t)p00 << 16) + (p10 - p00)*mvyf) >> 16);
+          dst[j*xblk_sz + i] = UP(
+           ((p00 << 4) + (p10 - p00)*mvyf) >> 4);
         }
         src += systride << 1;
       }
