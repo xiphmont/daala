@@ -58,7 +58,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
   int j;
   xblk_sz = 1 << log_xblk_sz;
   yblk_sz = 1 << log_yblk_sz;
-  src += (mvx >> 16) + (mvy >> 4)*systride;
+  src += (mvx >> 16) + (mvy >> 16)*systride;
   mvxf = (mvx & 0xF000) >> 12;
   mvyf = (mvy & 0xF000) >> 12;
   if (mvxf != 0) {
