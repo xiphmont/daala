@@ -32,10 +32,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "mc.h"
 #include "state.h"
 
-#define DOWN(x) (x)
-/*(OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))*/
-#define UP(x) OD_CLAMPREF(x)
-/*(od_reftype)(((OD_CLAMP255(x))-128)<<4)*/
+#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
+#define UP(x) (od_reftype)(((OD_CLAMP255(x))-128)<<4)
 /*Motion compensation routines shared between the encoder and decoder.*/
 
 /*Form the prediction given by one fixed motion vector.
@@ -76,9 +74,9 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p01 = DOWN(src[i<<1 | 1]);
           p10 = DOWN((src + systride)[i<<1]);
           p11 = DOWN((src + systride)[i<<1 | 1]);
-          a = (p00 << 4) + (p01 - p00)*mvxf;
-          b = (p10 << 4) + (p11 - p10)*mvxf;
-          dst[j*xblk_sz + i] = UP(((a<<4) + (b - a)*mvyf + (1<<7)) >> 8);
+          a = ((p00 << 4) + (p01 - p00)*mvxf) >> 4;
+          b = ((p10 << 4) + (p11 - p10)*mvxf) >> 4;
+          dst[j*xblk_sz + i] = UP(((a<<4) + (b - a)*mvyf) >> 4);
         }
         src += systride << 1;
       }
@@ -91,7 +89,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p00 = DOWN(src[i<<1]);
           p01 = DOWN(src[i<<1 | 1]);
           dst[j*xblk_sz + i] = UP(
-           ((p00 << 4) + (p01 - p00)*mvxf + (1<<3)) >> 4);
+           ((p00 << 4) + (p01 - p00)*mvxf) >> 4);
         }
         src += systride << 1;
       }
@@ -106,7 +104,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p00 = DOWN(src[i<<1]);
           p10 = DOWN((src + systride)[i<<1]);
           dst[j*xblk_sz + i] = UP(
-           ((p00 << 4) + (p10 - p00)*mvyf + (1<<3)) >> 4);
+           ((p00 << 4) + (p10 - p00)*mvyf) >> 4);
         }
         src += systride << 1;
       }
@@ -116,7 +114,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
         for (i = 0; i < xblk_sz; i++) {
           /*printf("<%16.12f, %16.12f>%s", mvx/(double)0x40000,
            mvy/(double)0x40000, i + 1 < xblk_sz ? "::" : "\n");*/
-          dst[j*xblk_sz + i] = UP(DOWN(src[i<<1]));
+          dst[j*xblk_sz + i] = src[i<<1];
         }
         src += systride << 1;
       }
