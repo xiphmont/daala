@@ -82,7 +82,7 @@ typedef ogg_int16_t od_reftype;
 # if (OD_REFERENCE_BYTES==1)
 #  define OD_CLAMPREF(x) (OD_CLAMP255(x))
 # else
-#  define OD_CLAMPREF(x) ((od_reftype)(OD_CLAMPI(-32768,(x),32767)))
+#  define OD_CLAMPREF(x) ((od_reftype)(OD_CLAMPI(-4096,(x),4095)))
 #endif
 
 /*OD_QUALITY_SHIFT specifies the number of fractional bits in a
