@@ -32,8 +32,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "mc.h"
 #include "state.h"
 
-#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (od_reftype)(((OD_CLAMP255(x))-128)<<4)
+#define DOWN(x) (x)
+/*(OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))*/
+#define UP(x) OD_CLAMPREF(x)
+/*(od_reftype)(((OD_CLAMP255(x))-128)<<4)*/
 /*Motion compensation routines shared between the encoder and decoder.*/
 
 /*Form the prediction given by one fixed motion vector.
