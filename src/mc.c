@@ -78,7 +78,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p11 = DOWN((src + systride)[i<<1 | 1]);
           a = ((p00 << 4) + (p01 - p00)*mvxf) >> 4;
           b = ((p10 << 4) + (p11 - p10)*mvxf) >> 4;
-          dst[j*xblk_sz + i] = UP(((a<<4) + (b - a)*mvyf) >> 4);
+          dst[j*xblk_sz + i] = UP(((a<<4) + (b - a)*mvyf + 1<<3) >> 4);
         }
         src += systride << 1;
       }
@@ -91,7 +91,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p00 = DOWN(src[i<<1]);
           p01 = DOWN(src[i<<1 | 1]);
           dst[j*xblk_sz + i] = UP(
-           ((p00 << 4) + (p01 - p00)*mvxf) >> 4);
+           ((p00 << 4) + (p01 - p00)*mvxf + 1<<3) >> 4);
         }
         src += systride << 1;
       }
@@ -106,7 +106,7 @@ void od_mc_predict1fmv_c(od_reftype *dst, const od_reftype *src,
           p00 = DOWN(src[i<<1]);
           p10 = DOWN((src + systride)[i<<1]);
           dst[j*xblk_sz + i] = UP(
-           ((p00 << 4) + (p10 - p00)*mvyf) >> 4);
+           ((p00 << 4) + (p10 - p00)*mvyf + 1<<3) >> 4);
         }
         src += systride << 1;
       }
