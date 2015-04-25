@@ -36,9 +36,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #endif
 #include "block_size.h"
 
-#define DOWN(x) (OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))
-#define UP(x) (((OD_CLAMP255(x))-128)<<4)
-#define OD_CLAMPTEST(x) OD_CLAMP255(x)
+#define DOWN(x) OD_CLAMPREF(x)
+/*(OD_CLAMP255( (( (x)+(1<<4>>1) ) >>4 ) + 128))*/
+#define UP(x) OD_CLAMPREF(x)
+/*(((OD_CLAMP255(x))-128)<<4)*/
+#define OD_CLAMPTEST(x) OD_CLAMPREF(x)
 
 /* OD_DC_RES[i] adjusts the quantization of DC for the ith plane.
    These values are based on manual tuning to optimize PSNR-HVS, while also
