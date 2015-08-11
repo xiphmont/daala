@@ -531,249 +531,6 @@ void od_state_set_mv_res(od_state *state, int mv_res) {
   }
 }
 
-#if 0
-/*Upsamples the reconstructed image to a reference image.
-  TODO: Pipeline with reconstruction.*/
-void od_state_upsample8(od_state *state, int refi) {
-  int pli;
-  for (pli = 0; pli < state->io_imgs[OD_FRAME_REC].nplanes; pli++) {
-    od_img_plane *siplane;
-    od_img_plane *diplane;
-    unsigned char *src;
-    unsigned char *dst;
-    int xpad;
-    int ypad;
-    int w;
-    int h;
-    int x;
-    int y;
-    siplane = state->io_imgs[OD_FRAME_REC].planes + pli;
-    diplane = state->ref_imgs[refi].planes + pli;
-    xpad = OD_UMV_PADDING >> siplane->xdec;
-    ypad = OD_UMV_PADDING >> siplane->ydec;
-    w = state->io_imgs[OD_FRAME_REC].width >> siplane->xdec;
-    h = state->io_imgs[OD_FRAME_REC].height >> siplane->ydec;
-    src = siplane->data;
-    dst = diplane->data - (diplane->ystride << 1)*ypad;
-    for (y = -ypad; y < h + ypad + 2; y++) {
-      /*Horizontal filtering:*/
-      if (y < h + ypad) {
-        unsigned char *buf;
-        buf = state->ref_line_buf[y & 3];
-        for (x = -xpad; x < -1; x++) {
-          *(buf + (x << 1)) = src[0];
-          *(buf + (x << 1| 1)) = src[0];
-        }
-        *(buf - 2) = src[0];
-        *(buf - 1) = OD_CLAMP255((132*src[0] - 4*src[1] + 64) >> 7);
-        buf[0] = OD_CLAMP255((121*src[0] + 7*src[1] + 64) >> 7);
-        /*buf[0] = src[0];*/
-        buf[1] =
-         OD_CLAMP255((68*(src[0] + src[1]) - 4*(src[0] + src[2]) + 64) >> 7);
-        for (x = 1; x < w - 2; x++) {
-          buf[x << 1] =
-           OD_CLAMP255((7*src[x - 1] + 114*src[x] + 7*src[x + 1] + 64) >> 7);
-          /*buf[x << 1] = src[x];*/
-          buf[x << 1 | 1] = OD_CLAMP255((68*(src[x] + src[x + 1])
-           - 4*(src[x - 1] + src[x + 2]) + 64) >> 7);
-        }
-        buf[x << 1] =
-         OD_CLAMP255((7*src[x - 1] + 114*src[x] + 7*src[x + 1] + 64) >> 7);
-        /*buf[x << 1] = src[x];*/
-        buf[x << 1 | 1] = OD_CLAMP255((68*(src[x] + src[x + 1])
-         - 4*(src[x - 1] + src[x + 1]) + 64) >> 7);
-        x++;
-        buf[x << 1] =
-         OD_CLAMP255((7*src[x - 1] + 114*src[x] + 7*src[x] + 64) >> 7);
-        /*buf[x << 1] = src[x];*/
-        buf[x << 1 | 1] = OD_CLAMP255((132*src[x] - 4*src[x - 1] + 64) >> 7);
-        for (x++; x < w + xpad; x++) {
-          buf[x << 1] = src[w - 1];
-          buf[x << 1 | 1] = src[w - 1];
-        }
-        if (y >= 0 && y + 1 < h) src += siplane->ystride;
-      }
-      /*Vertical filtering:*/
-      if (y >= -ypad + 2) {
-        if (y < 1 || y > h + 1) {
-          memcpy(dst - (xpad << 1),
-           state->ref_line_buf[(y - 2) & 3] - (xpad << 1),
-           w + (xpad << 1) << 1);
-          /*fprintf(stderr, "%3i: ", (y - 2) << 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-          memcpy(dst - (xpad << 1),
-           state->ref_line_buf[(y - 2) & 3] - (xpad << 1),
-           (w + (xpad << 1)) << 1);
-          /*fprintf(stderr, "%3i: ", (y - 2) << 1 | 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-        }
-        else {
-          unsigned char *buf[4];
-          buf[0] = state->ref_line_buf[(y - 3) & 3];
-          buf[1] = state->ref_line_buf[(y - 2) & 3];
-          buf[2] = state->ref_line_buf[(y - 1) & 3];
-          buf[3] = state->ref_line_buf[(y - 0) & 3];
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst + x) = OD_CLAMP255((7**(buf[0] + x) + 114**(buf[1] + x)
-             + 7**(buf[2] + x) + 64) >> 7);
-            /**(dst + x) = *(buf[1] + x);*/
-          }
-          /*fprintf(stderr, "%3i: ", (y - 2) << 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst + x) = OD_CLAMP255((68*(*(buf[1] + x) + *(buf[2] + x))
-             - 4*(*(buf[0] + x) + *(buf[3] + x)) + 64) >> 7);
-          }
-          /*fprintf(stderr, "%3i: ", (y - 2) << 1 | 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-        }
-      }
-    }
-  }
-}
-#else
-/*Upsamples the reconstructed image to a reference image.
-  TODO: Pipeline with reconstruction.*/
-void od_state_upsample8(od_state *state, od_img *dimg, const od_img *simg) {
-  int pli;
-  for (pli = 0; pli < state->io_imgs[OD_FRAME_REC].nplanes; pli++) {
-    const od_img_plane *siplane;
-    od_img_plane *diplane;
-    const unsigned char *src;
-    unsigned char *dst;
-    int xpad;
-    int ypad;
-    int w;
-    int h;
-    int x;
-    int y;
-    siplane = simg->planes + pli;
-    diplane = dimg->planes + pli;
-    xpad = OD_UMV_PADDING >> siplane->xdec;
-    ypad = OD_UMV_PADDING >> siplane->ydec;
-    w = simg->width >> siplane->xdec;
-    h = simg->height >> siplane->ydec;
-    src = siplane->data;
-    dst = diplane->data - (diplane->ystride << 1)*ypad;
-    for (y = -ypad; y < h + ypad + 3; y++) {
-      /*Horizontal filtering:*/
-      if (y < h + ypad) {
-        unsigned char *buf;
-        buf = state->ref_line_buf[y & 7];
-        memset(buf - (xpad << 1), src[0], (xpad - 2) << 1);
-        /*for (x = -xpad; x < -2; x++) {
-          *(buf + (x << 1)) = src[0];
-          *(buf + (x << 1 | 1)) = src[0];
-        }*/
-        *(buf - 4) = src[0];
-        *(buf - 3) = OD_CLAMP255((31*src[0] + src[1] + 16) >> 5);
-        *(buf - 2) = src[0];
-        *(buf - 1) = OD_CLAMP255((36*src[0] - 5*src[1] + src[1] + 16) >> 5);
-        buf[0] = src[0];
-        buf[1] = OD_CLAMP255((20*(src[0] + src[1])
-         - 5*(src[0] + src[2]) + src[0] + src[3] + 16) >> 5);
-        buf[2] = src[1];
-        buf[3] = OD_CLAMP255((20*(src[1] + src[2])
-         - 5*(src[0] + src[3]) + src[0] + src[4] + 16) >> 5);
-        for (x = 2; x < w - 3; x++) {
-          buf[x << 1] = src[x];
-          buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-           - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 3] + 16) >> 5);
-        }
-        buf[x << 1] = src[x];
-        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-         - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 2] + 16) >> 5);
-        x++;
-        buf[x << 1] = src[x];
-        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-         - 5*(src[x - 1] + src[x + 1]) + src[x - 2] + src[x + 1] + 16) >> 5);
-        x++;
-        buf[x << 1] = src[x];
-        buf[x << 1 | 1] =
-         OD_CLAMP255((36*src[x] - 5*src[x - 1] + src[x - 2] + 16) >> 5);
-        x++;
-        buf[x << 1] = src[w - 1];
-        buf[x << 1 | 1] = OD_CLAMP255((31*src[w - 1] + src[w - 2] + 16) >> 5);
-        memset(buf + (++x << 1), src[w - 1], (xpad - 1) << 1);
-        /*for (x++; x < w + xpad; x++) {
-          buf[x << 1] = src[w - 1];
-          buf[x << 1 | 1]=src[w - 1];
-        }*/
-        if (y >= 0 && y + 1 < h) src += siplane->ystride;
-      }
-      /*Vertical filtering:*/
-      if (y >= -ypad + 3) {
-        if (y < 1 || y > h + 3) {
-          OD_COPY(dst - (xpad << 1),
-           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
-           (w + (xpad << 1)) << 1);
-          /*fprintf(stderr, "%3i: ", (y - 3) << 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-          OD_COPY(dst - (xpad << 1),
-           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
-           (w + (xpad << 1)) << 1);
-          /*fprintf(stderr, "%3i: ", (y - 3) << 1 | 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-        }
-        else {
-          unsigned char *buf[6];
-          buf[0] = state->ref_line_buf[(y - 5) & 7];
-          buf[1] = state->ref_line_buf[(y - 4) & 7];
-          buf[2] = state->ref_line_buf[(y - 3) & 7];
-          buf[3] = state->ref_line_buf[(y - 2) & 7];
-          buf[4] = state->ref_line_buf[(y - 1) & 7];
-          buf[5] = state->ref_line_buf[(y - 0) & 7];
-          OD_COPY(dst - (xpad << 1),
-           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
-           (w + (xpad << 1)) << 1);
-          /*fprintf(stderr, "%3i: ", (y - 3) << 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            *(dst + x) = OD_CLAMP255((20*(*(buf[2] + x) + *(buf[3] + x))
-             - 5*(*(buf[1] + x) + *(buf[4] + x))
-             + *(buf[0] + x) + *(buf[5] + x) + 16) >> 5);
-          }
-          /*fprintf(stderr, "%3i: ", (y - 3) << 1 | 1);
-          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
-            fprintf(stderr, "%02X", *(dst + x));
-          }
-          fprintf(stderr, "\n");*/
-          dst += diplane->ystride;
-        }
-      }
-    }
-  }
-}
-#endif
-
 /*The data used to build the following two arrays.*/
 const int OD_VERT_D[22] = {
 /*0  1        4  5        8  9        12  13          17  18*/
@@ -981,6 +738,131 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
 static const unsigned char OD_YCbCr_BORDER[3] = {113, 72, 137};
 static const unsigned char OD_YCbCr_EDGE[3] = {41, 240, 110};
 static const unsigned char OD_YCbCr_MV[3] = {81, 90, 240};
+
+/*Upsamples the reconstructed image to a reference image.
+  TODO: Pipeline with reconstruction.*/
+void od_state_upsample8(od_state *state, od_img *dimg, const od_img *simg) {
+  int pli;
+  for (pli = 0; pli < state->io_imgs[OD_FRAME_REC].nplanes; pli++) {
+    const od_img_plane *siplane;
+    od_img_plane *diplane;
+    const unsigned char *src;
+    unsigned char *dst;
+    int xpad;
+    int ypad;
+    int w;
+    int h;
+    int x;
+    int y;
+    siplane = simg->planes + pli;
+    diplane = dimg->planes + pli;
+    xpad = OD_UMV_PADDING >> siplane->xdec;
+    ypad = OD_UMV_PADDING >> siplane->ydec;
+    w = simg->width >> siplane->xdec;
+    h = simg->height >> siplane->ydec;
+    src = siplane->data;
+    dst = diplane->data - (diplane->ystride << 1)*ypad;
+    for (y = -ypad; y < h + ypad + 3; y++) {
+      /*Horizontal filtering:*/
+      if (y < h + ypad) {
+        unsigned char *buf;
+        buf = state->ref_line_buf[y & 7];
+        memset(buf - (xpad << 1), src[0], (xpad - 2) << 1);
+        /*for (x = -xpad; x < -2; x++) {
+          *(buf + (x << 1)) = src[0];
+          *(buf + (x << 1 | 1)) = src[0];
+        }*/
+        *(buf - 4) = src[0];
+        *(buf - 3) = OD_CLAMP255((31*src[0] + src[1] + 16) >> 5);
+        *(buf - 2) = src[0];
+        *(buf - 1) = OD_CLAMP255((36*src[0] - 5*src[1] + src[1] + 16) >> 5);
+        buf[0] = src[0];
+        buf[1] = OD_CLAMP255((20*(src[0] + src[1])
+         - 5*(src[0] + src[2]) + src[0] + src[3] + 16) >> 5);
+        buf[2] = src[1];
+        buf[3] = OD_CLAMP255((20*(src[1] + src[2])
+         - 5*(src[0] + src[3]) + src[0] + src[4] + 16) >> 5);
+        for (x = 2; x < w - 3; x++) {
+          buf[x << 1] = src[x];
+          buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
+           - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 3] + 16) >> 5);
+        }
+        buf[x << 1] = src[x];
+        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
+         - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 2] + 16) >> 5);
+        x++;
+        buf[x << 1] = src[x];
+        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
+         - 5*(src[x - 1] + src[x + 1]) + src[x - 2] + src[x + 1] + 16) >> 5);
+        x++;
+        buf[x << 1] = src[x];
+        buf[x << 1 | 1] =
+         OD_CLAMP255((36*src[x] - 5*src[x - 1] + src[x - 2] + 16) >> 5);
+        x++;
+        buf[x << 1] = src[w - 1];
+        buf[x << 1 | 1] = OD_CLAMP255((31*src[w - 1] + src[w - 2] + 16) >> 5);
+        memset(buf + (++x << 1), src[w - 1], (xpad - 1) << 1);
+        /*for (x++; x < w + xpad; x++) {
+          buf[x << 1] = src[w - 1];
+          buf[x << 1 | 1]=src[w - 1];
+        }*/
+        if (y >= 0 && y + 1 < h) src += siplane->ystride;
+      }
+      /*Vertical filtering:*/
+      if (y >= -ypad + 3) {
+        if (y < 1 || y > h + 3) {
+          OD_COPY(dst - (xpad << 1),
+           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
+           (w + (xpad << 1)) << 1);
+          /*fprintf(stderr, "%3i: ", (y - 3) << 1);
+          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
+            fprintf(stderr, "%02X", *(dst + x));
+          }
+          fprintf(stderr, "\n");*/
+          dst += diplane->ystride;
+          OD_COPY(dst - (xpad << 1),
+           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
+           (w + (xpad << 1)) << 1);
+          /*fprintf(stderr, "%3i: ", (y - 3) << 1 | 1);
+          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
+            fprintf(stderr, "%02X", *(dst + x));
+          }
+          fprintf(stderr, "\n");*/
+          dst += diplane->ystride;
+        }
+        else {
+          unsigned char *buf[6];
+          buf[0] = state->ref_line_buf[(y - 5) & 7];
+          buf[1] = state->ref_line_buf[(y - 4) & 7];
+          buf[2] = state->ref_line_buf[(y - 3) & 7];
+          buf[3] = state->ref_line_buf[(y - 2) & 7];
+          buf[4] = state->ref_line_buf[(y - 1) & 7];
+          buf[5] = state->ref_line_buf[(y - 0) & 7];
+          OD_COPY(dst - (xpad << 1),
+           state->ref_line_buf[(y - 3) & 7] - (xpad << 1),
+           (w + (xpad << 1)) << 1);
+          /*fprintf(stderr, "%3i: ", (y - 3) << 1);
+          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
+            fprintf(stderr, "%02X", *(dst + x));
+          }
+          fprintf(stderr, "\n");*/
+          dst += diplane->ystride;
+          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
+            *(dst + x) = OD_CLAMP255((20*(*(buf[2] + x) + *(buf[3] + x))
+             - 5*(*(buf[1] + x) + *(buf[4] + x))
+             + *(buf[0] + x) + *(buf[5] + x) + 16) >> 5);
+          }
+          /*fprintf(stderr, "%3i: ", (y - 3) << 1 | 1);
+          for (x = -xpad << 1; x < (w + xpad) << 1; x++) {
+            fprintf(stderr, "%02X", *(dst + x));
+          }
+          fprintf(stderr, "\n");*/
+          dst += diplane->ystride;
+        }
+      }
+    }
+  }
+}
 
 void od_img_draw_point(od_img *img, int x, int y,
  const unsigned char ycbcr[3]) {
