@@ -144,6 +144,8 @@ int daala_log_init(void);
 
 /** Representation of a single component within an image or frame. */
 struct od_img_plane {
+  /** Image data is stored as an unsigned octet type whether it's
+      actually 8 bit or a multi-byte depth. */
   unsigned char *data;
   /** The decimation factor in x direction. Pixels are reduced by a factor of
       2^xdec so 0 is none, 1 is decimated by a factor of 2. ( YUV420 will
@@ -151,11 +153,20 @@ struct od_img_plane {
       zero ). */
   unsigned char xdec;
   unsigned char ydec;
-  /** Distance in memory between two pixels horizontally next to each other in
-      (is always 1 in encoder). */
+  /** Distance in memory between two pixels horizontally next to each other.
+      The value is in bytes regardless of the 'actual' underlying depth
+       (either unsigned bytes for reduced precision or signed 16 bit
+       shorts for full precision). */
   int xstride;
-  /** Distance in memory between two pixels vertically next to each other. */
+  /** Distance in memory between two pixels vertically next to each other.
+      As with xstride, this bvalue is always in bytes. */
   int ystride;
+  /** 8 for 'normal' video precision; data is unsigned bytes centered on 128.
+      >8 indicates high-depth video; data is unnormalized host-endian order
+       signed 16-bit shorts (two octets).
+      For example, 10 bit video would declare a bit depth of 10 and use the
+      lower 10 bits of each 16 bit short. */
+  int bitdepth;
 };
 
 /** Representation of an image or video frame. */
@@ -184,6 +195,7 @@ struct daala_info {
   /** pic_width,_height form a region of interest to encode */
   int32_t pic_width;
   int32_t pic_height;
+  uint32_t bitdepth;
   uint32_t pixel_aspect_numerator;
   uint32_t pixel_aspect_denominator;
   uint32_t timebase_numerator;

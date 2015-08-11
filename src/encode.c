@@ -379,8 +379,26 @@ static void od_img_plane_copy_pad8(od_img_plane *dst_p,
     src_data = src_p->data;
     dst = dst_data;
     for (y = 0; y < pic_height; y++) {
-      if (sxstride == 1) OD_COPY(dst, src_data, pic_width);
-      else for (x = 0; x < pic_width; x++) dst[x] = *(src_data + sxstride*x);
+      if (sxstride == 1) {
+        OD_COPY(dst, src_data, pic_width);
+      }
+      else {
+        if (src_p->bitdepth <= 8) {
+          /*1 byte per pixel*/
+          for (x = 0; x < pic_width; x++) {
+            dst[x] = *(src_data + sxstride*x);
+          }
+        }
+        else {
+          /*2 bytes per pixel*/
+          /*For now, we don't internally support high-depth.
+            We accept the high-depth input and truncate it. */
+          for (x = 0; x < pic_width; x++) {
+            dst[x] = ((*(src_data + sxstride*x)) +
+		      (*(src_data + sxstride*x + 1)<<8))>>((src_p->bitdepth)-8);
+          }
+        }
+      }
       dst += dstride;
       src_data += systride;
     }
