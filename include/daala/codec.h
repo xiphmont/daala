@@ -155,17 +155,17 @@ struct od_img_plane {
   unsigned char ydec;
   /** Distance in memory between two pixels horizontally next to each other.
       The value is in bytes regardless of the 'actual' underlying depth
-       (either unsigned bytes for reduced precision or signed 16 bit
-       shorts for full precision). */
+       (either unsigned bytes for 8 bit video or unsigned 16 bit shorts for
+       high-depth video). */
   int xstride;
   /** Distance in memory between two pixels vertically next to each other.
       As with xstride, this bvalue is always in bytes. */
   int ystride;
   /** 8 for 'normal' video precision; data is unsigned bytes centered on 128.
       >8 indicates high-depth video; data is unnormalized host-endian order
-       signed 16-bit shorts (two octets).
-      For example, 10 bit video would declare a bit depth of 10 and use the
-      lower 10 bits of each 16 bit short. */
+       unsigned signed 16-bit shorts (two octets).
+      For example, 10 bit video would declare a bit depth of 10, use the
+      lower 10 bits of each 16 bit short, and center on 512. */
   int bitdepth;
 };
 
