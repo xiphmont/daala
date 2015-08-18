@@ -214,6 +214,42 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
     avin->video_plane_info[2].xdec = 0;
     avin->video_plane_info[2].ydec = 0;
   }
+  if (strcmp(avin->video_chroma_type, "444p10") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 10;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 0;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 0;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  if (strcmp(avin->video_chroma_type, "444p12") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 12;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 0;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 0;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  if (strcmp(avin->video_chroma_type, "444p14") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 14;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 0;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 0;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  if (strcmp(avin->video_chroma_type, "444p16") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 16;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 0;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 0;
+    avin->video_plane_info[2].ydec = 0;
+  }
   else if (strcmp(avin->video_chroma_type, "444alpha") == 0) {
     avin->video_nplanes = 4;
     avin->video_plane_info[1].xdec = 0;
@@ -225,6 +261,42 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
   }
   else if (strcmp(avin->video_chroma_type, "422") == 0) {
     avin->video_nplanes = 3;
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  else if (strcmp(avin->video_chroma_type, "422p10") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 10;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  else if (strcmp(avin->video_chroma_type, "422p12") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 12;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  else if (strcmp(avin->video_chroma_type, "422p14") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 14;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 0;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 0;
+  }
+  else if (strcmp(avin->video_chroma_type, "422p16") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 16;
+    avin->video_swapendian = host_is_big_endian();
     avin->video_plane_info[1].xdec = 1;
     avin->video_plane_info[1].ydec = 0;
     avin->video_plane_info[2].xdec = 1;
@@ -250,6 +322,24 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
   else if (strcmp(avin->video_chroma_type, "420p10") == 0){
     avin->video_nplanes = 3;
     avin->video_depth = 10;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 1;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 1;
+  }
+  else if (strcmp(avin->video_chroma_type, "420p12") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 12;
+    avin->video_swapendian = host_is_big_endian();
+    avin->video_plane_info[1].xdec = 1;
+    avin->video_plane_info[1].ydec = 1;
+    avin->video_plane_info[2].xdec = 1;
+    avin->video_plane_info[2].ydec = 1;
+  }
+  else if (strcmp(avin->video_chroma_type, "420p14") == 0) {
+    avin->video_nplanes = 3;
+    avin->video_depth = 14;
     avin->video_swapendian = host_is_big_endian();
     avin->video_plane_info[1].xdec = 1;
     avin->video_plane_info[1].ydec = 1;
