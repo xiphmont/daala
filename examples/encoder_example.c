@@ -65,7 +65,20 @@ struct av_input{
   od_img video_img;
   int video_cur_img;
   int video_depth;
+  int video_swapendian;
 };
+
+#define SWAP(a, b)  {a ^= b; b ^= a; a ^= b;}
+
+static int host_is_big_endian() {
+  union {
+    uint16_t pattern;
+    unsigned char bytewise[2];
+  } m;
+  m.pattern = (uint16_t)0xdead; /* beef */
+  if (m.bytewise[0] == 0xde) return 1;
+  return 0;
+}
 
 static int y4m_parse_tags(av_input *avin, char *tags) {
   int got_w;
@@ -193,6 +206,7 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
   avin->video_plane_info[0].xdec = 0;
   avin->video_plane_info[0].ydec = 0;
   avin->video_depth = 8;
+  avin->video_swapendian = 0;
   if (strcmp(avin->video_chroma_type, "444") == 0) {
     avin->video_nplanes = 3;
     avin->video_plane_info[1].xdec = 0;
@@ -236,6 +250,7 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
   else if (strcmp(avin->video_chroma_type, "420p10") == 0){
     avin->video_nplanes = 3;
     avin->video_depth = 10;
+    avin->video_swapendian = host_is_big_endian();
     avin->video_plane_info[1].xdec = 1;
     avin->video_plane_info[1].ydec = 1;
     avin->video_plane_info[2].xdec = 1;
@@ -244,6 +259,7 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
   else if (strcmp(avin->video_chroma_type, "420p16") == 0) {
     avin->video_nplanes = 3;
     avin->video_depth = 16;
+    avin->video_swapendian = host_is_big_endian();
     avin->video_plane_info[1].xdec = 1;
     avin->video_plane_info[1].ydec = 1;
     avin->video_plane_info[2].xdec = 1;
@@ -253,7 +269,7 @@ static void id_y4m_file(av_input *avin, const char *file, FILE *test) {
     avin->video_nplanes = 1;
   }
   else {
-    fprintf(stderr, "Unknown chroma sampling type: '%s'.\n",
+    fprintf(stderr, "Unknown/unsupported chroma sampling type: '%s'.\n",
      avin->video_chroma_type);
     exit(1);
   }
@@ -358,6 +374,12 @@ int fetch_and_process_video(av_input *avin, ogg_page *page,
         if (ret != plane_sz) {
           fprintf(stderr, "Error reading YUV frame data.\n");
           exit(1);
+        }
+        if(iplane->xstride==2 && avin->video_swapendian){
+          size_t i;
+          for(i=0; i<plane_sz; i+=2){
+            SWAP(iplane->data[i],iplane->data[i+1]);
+          }
         }
       }
       if (skip && (*skip) > 0) {
