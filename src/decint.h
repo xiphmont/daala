@@ -49,6 +49,9 @@ struct daala_dec_ctx {
   int user_fstride;
   od_mv_grid_pt *user_mv_grid;
   od_img *user_mc_img;
+  /*Buffer for the output frame, bitdepth equal to declared video depth.*/
+  od_img output_img;
+  unsigned char *output_img_data;
 };
 
 /*Stub for the daala_setup_info.*/

@@ -108,6 +108,9 @@ struct daala_enc_ctx{
   od_coeff c_orig[OD_NBSIZES-1][OD_BSIZE_MAX*OD_BSIZE_MAX];
   od_coeff nosplit[OD_NBSIZES-1][OD_BSIZE_MAX*OD_BSIZE_MAX];
   od_coeff split[OD_NBSIZES-1][OD_BSIZE_MAX*OD_BSIZE_MAX];
+  /* Buffer for the input frame, scaled to reference resolution. */
+  od_img input_img;
+  unsigned char *input_img_data;
 };
 
 /** Holds important encoder information so we can roll back decisions */
