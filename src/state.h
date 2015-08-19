@@ -54,22 +54,17 @@ extern const int OD_HAAR_QM[2][OD_LOG_BSIZE_MAX];
 /*Adaptation speed of scalar Laplace encoding.*/
 # define OD_SCALAR_ADAPT_SPEED (4)
 
-/*The golden reference frame.*/
+/*The golden reference frame (currently unused).*/
 # define OD_FRAME_GOLD (0)
 /*The previous reference frame.*/
 # define OD_FRAME_PREV (1)
-/*The next reference frame.*/
+/*The next reference frame (currently unused).*/
 # define OD_FRAME_NEXT (2)
-/*The current frame.*/
+/*The current frame; used as a reconstruction buffer.*/
 # define OD_FRAME_SELF (3)
-
-/*The reconstructed I/O frame.*/
-# define OD_FRAME_REC   (0)
-/*The input I/O frame.*/
-# define OD_FRAME_INPUT (1)
+# define OD_FRAME_MAX  (3)
 
 /*Constants for the packet state machine common between encoder and decoder.*/
-
 /*Next packet to emit/read: Codec info header.*/
 # define OD_PACKET_INFO_HDR    (-3)
 /*Next packet to emit/read: Comment header.*/
@@ -163,12 +158,10 @@ struct od_state{
   int32_t         frame_width;
   int32_t         frame_height;
   /** Buffer for the 4 ref images. */
-  int                 ref_imgi[4];
+  int            ref_imgi[OD_FRAME_MAX+1];
   /** Pointers to the ref images so one can move them around without coping
       them. */
-  od_img              ref_imgs[4];
-  /** Pointer to input and output image. */
-  od_img              io_imgs[2];
+  od_img         ref_imgs[OD_FRAME_MAX+1];
   unsigned char *ref_line_buf[8];
   unsigned char *ref_img_data;
   /** Increments by 1 for each frame. */
@@ -205,13 +198,6 @@ struct od_state{
   int                 dump_tags;
   od_yuv_dumpfile    *dump_files;
 # endif
-# if defined(OD_DUMP_IMAGES)
-  od_img              vis_img;
-  od_img              tmp_vis_img;
-#  if defined(OD_ANIMATE)
-  int                 ani_iter;
-#  endif
-# endif
   od_coeff *ctmp[OD_NPLANES_MAX];
   od_coeff *dtmp[OD_NPLANES_MAX];
   od_coeff *mctmp[OD_NPLANES_MAX];
@@ -222,18 +208,20 @@ struct od_state{
   /* Holds a TF'd copy of the transform coefficients in 4x4 blocks. */
 };
 
+void *od_aligned_malloc(size_t _sz,size_t _align);
+void od_aligned_free(void *_ptr);
 int od_state_init(od_state *_state, const daala_info *_info);
 void od_state_clear(od_state *_state);
 
 void od_img_copy(od_img* dest, od_img* src);
 void od_adapt_ctx_reset(od_adapt_ctx *state, int is_keyframe);
 void od_state_set_mv_res(od_state *state, int mv_res);
-void od_state_pred_block_from_setup(od_state *_state, unsigned char *_buf,
- int _ystride, int _ref, int _pli, int _vx, int _vy, int _c, int _s,
- int _log_mvb_sz);
-void od_state_pred_block(od_state *_state, unsigned char *_buf, int _ystride,
- int _ref, int _pli, int _vx, int _vy, int _log_mvb_sz);
-void od_state_mc_predict(od_state *_state, int _ref);
+void od_state_pred_block_from_setup(od_state *state, unsigned char *buf,
+ int ystride, od_img *ref, int pli, int vx, int vy, int c, int s,
+ int log_mvb_sz);
+void od_state_pred_block(od_state *state, unsigned char *buf, int ystride,
+ od_img *ref, int pli, int vx, int vy, int log_mvb_sz);
+void od_state_mc_predict(od_state *state, od_img *img_dst, od_img *img_src);
 void od_state_init_border(od_state *_state);
 int od_state_dump_yuv(od_state *_state, od_img *_img, const char *_tag);
 void od_img_edge_ext(od_img* src);

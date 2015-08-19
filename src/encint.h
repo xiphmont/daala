@@ -111,6 +111,13 @@ struct daala_enc_ctx{
   /* Buffer for the input frame, scaled to reference resolution. */
   od_img input_img;
   unsigned char *input_img_data;
+# if defined(OD_DUMP_IMAGES)
+  od_img              vis_img;
+  od_img              tmp_vis_img;
+#  if defined(OD_ANIMATE)
+  int                 ani_iter;
+#  endif
+# endif
 };
 
 /** Holds important encoder information so we can roll back decisions */

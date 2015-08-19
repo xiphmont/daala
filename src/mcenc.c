@@ -1597,7 +1597,7 @@ static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   int h;
   int32_t ret;
   state = &enc->state;
-  iplane = state->io_imgs[OD_FRAME_INPUT].planes + pli;
+  iplane = enc->input_img.planes + pli;
   /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
@@ -1665,7 +1665,7 @@ static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
   int h;
   int32_t ret;
   state = &enc->state;
-  iplane = state->io_imgs[OD_FRAME_INPUT].planes + pli;
+  iplane = enc->input_img.planes + pli;
   /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
@@ -2142,13 +2142,15 @@ static int od_mv_est_bits(od_mv_est_ctx *est, int equal_mvs,
    because MC ref image is NOT upsampled at frame level.*/
 static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
  int ref, int bx, int by, int mvx, int mvy, int log_mvb_sz) {
+  daala_enc_ctx *enc;
   od_state *state;
   od_img_plane *iplane;
   int32_t ret;
   int refi;
   int dx;
   int dy;
-  state = &est->enc->state;
+  enc = est->enc;
+  state = &enc->state;
   refi = state->ref_imgi[ref];
   iplane = state->ref_imgs[refi].planes + 0;
   OD_ASSERT(iplane->xdec == 0 && iplane->ydec == 0);
@@ -2159,7 +2161,7 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
     unsigned char *ref_img;
-    for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
+    for (pli = 1; pli < enc->input_img.nplanes; pli++) {
       iplane = state->ref_imgs[refi].planes + pli;
       OD_ASSERT(((bx + (1 << iplane->xdec) - 1) & ~((1 << iplane->xdec) - 1))
        == bx);
@@ -2190,15 +2192,15 @@ static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
   int32_t ret;
   state = &est->enc->state;
   od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
-   ref, 0, vx, vy, oc, s, log_mvb_sz);
+   state->ref_imgs + state->ref_imgi[ref], 0, vx, vy, oc, s, log_mvb_sz);
   ret = est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
    1, 0, vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
-    for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
+    for (pli = 1; pli < est->enc->input_img.nplanes; pli++) {
       od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
-       ref, pli, vx, vy, oc, s, log_mvb_sz);
+       state->ref_imgs + state->ref_imgi[ref], pli, vx, vy, oc, s, log_mvb_sz);
       ret += est->compute_distortion(est->enc, state->mc_buf[4],
        OD_MVBSIZE_MAX, 1, pli, vx << OD_LOG_MVBSIZE_MIN,
        vy << OD_LOG_MVBSIZE_MIN, log_mvb_sz + OD_LOG_MVBSIZE_MIN)
@@ -6006,7 +6008,7 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
   state = &est->enc->state;
   nhmvbs = state->nhmvbs;
   nvmvbs = state->nvmvbs;
-  iplane = state->io_imgs[OD_FRAME_INPUT].planes + 0;
+  iplane = est->enc->input_img.planes + 0;
   /*Sanitize user parameters*/
   est->level_min = OD_MINI(est->enc->params.mv_level_min,
    est->enc->params.mv_level_max);
@@ -6032,8 +6034,8 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
   /*If we're using the chroma planes, then our distortions will be larger.
     Compensate by increasing lambda and the termination thresholds.*/
   if (est->flags & OD_MC_USE_CHROMA) {
-    for (pli = 1; pli < state->io_imgs[OD_FRAME_INPUT].nplanes; pli++) {
-      iplane = state->io_imgs[OD_FRAME_INPUT].planes + pli;
+    for (pli = 1; pli < est->enc->input_img.nplanes; pli++) {
+      iplane = est->enc->input_img.planes + pli;
       est->lambda +=
        lambda >> (iplane->xdec + iplane->ydec + OD_MC_CHROMA_SCALE);
       for (log_mvb_sz = 0; log_mvb_sz < OD_NMVBSIZES; log_mvb_sz++) {
