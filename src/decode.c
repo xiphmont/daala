@@ -50,6 +50,7 @@ static int od_dec_init(od_dec_ctx *dec, const daala_info *info,
   od_img *img;
   od_img_plane *iplane;
   size_t data_sz;
+  unsigned char *output_img_data;
   int frame_buf_width;
   int frame_buf_height;
   int plane_buf_width;
@@ -73,7 +74,7 @@ static int od_dec_init(od_dec_ctx *dec, const daala_info *info,
     plane_buf_height = frame_buf_height >> info->plane_info[pli].ydec;
     data_sz += plane_buf_width*plane_buf_height;
   }
-  dec->output_img_data =
+  dec->output_img_data = output_img_data =
     (unsigned char *)od_aligned_malloc(data_sz, 32);
   if (OD_UNLIKELY(!dec->output_img_data)) {
     return OD_EFAULT;
@@ -87,9 +88,10 @@ static int od_dec_init(od_dec_ctx *dec, const daala_info *info,
     plane_buf_width = frame_buf_width >> info->plane_info[pli].xdec;
     plane_buf_height = frame_buf_height >> info->plane_info[pli].ydec;
     iplane = img->planes + pli;
-    iplane->data = dec->output_img_data
+    iplane->data = output_img_data
       + (OD_UMV_PADDING >> info->plane_info[pli].xdec)
       + plane_buf_width*(OD_UMV_PADDING >> info->plane_info[pli].ydec);
+    output_img_data += plane_buf_width*plane_buf_height;
     iplane->xdec = info->plane_info[pli].xdec;
     iplane->ydec = info->plane_info[pli].ydec;
     iplane->xstride = 1;
