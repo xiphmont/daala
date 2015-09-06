@@ -1330,39 +1330,35 @@ static const od_offset *OD_ANCESTORS[OD_MVB_DELTA0][OD_MVB_DELTA0] = {
 };
 
 /*Computes the Sum of Absolute Differences: slow path.*/
-int od_mc_compute_sad_c(const unsigned char *src, int systride,
- const unsigned char *ref, int dystride, int dxstride, int w, int h) {
-  const unsigned char *ref0;
+int od_mc_compute_sad8_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride, int w, int h) {
   int i;
   int j;
   int ret;
   ret = 0;
-  ref0 = ref;
   for (j = 0; j < h; j++) {
-    ref = ref0;
     for (i = 0; i < w; i++) {
-      ret += abs(ref[0] - src[i]);
-      ref += dxstride;
+      ret += abs(ref[i] - src[i]);
     }
     src += systride;
-    ref0 += dystride;
+    ref += dystride;
   }
   return ret;
 }
 
-int od_mc_compute_sad_4x4_xstride_1_c(const unsigned char *src, int systride,
+int od_mc_compute_sad8_4x4_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
-  return od_mc_compute_sad_c(src, systride, ref, dystride, 1, 4, 4);
+  return od_mc_compute_sad8_c(src, systride, ref, dystride, 4, 4);
 }
 
-int od_mc_compute_sad_8x8_xstride_1_c(const unsigned char *src, int systride,
+int od_mc_compute_sad8_8x8_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
-  return od_mc_compute_sad_c(src, systride, ref, dystride, 1, 8, 8);
+  return od_mc_compute_sad8_c(src, systride, ref, dystride, 8, 8);
 }
 
-int od_mc_compute_sad_16x16_xstride_1_c(const unsigned char *src, int systride,
+int od_mc_compute_sad8_16x16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
-  return od_mc_compute_sad_c(src, systride, ref, dystride, 1, 16, 16);
+  return od_mc_compute_sad8_c(src, systride, ref, dystride, 16, 16);
 }
 
 static const od_coeff OD_HADAMARD_4X4[] = {
@@ -1531,7 +1527,7 @@ static void od_hadamard_2d(od_coeff *dest, const od_coeff *diff,
    log_blk_sz);
 }
 
-static int od_mc_compute_satd_generic_size_c(const unsigned char *src,
+static int od_mc_compute_satd8_generic_size_c(const unsigned char *src,
  int systride, const unsigned char *ref, int dystride, const int log_blk_sz) {
   od_coeff diff[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
   od_coeff dest[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
@@ -1555,37 +1551,37 @@ static int od_mc_compute_satd_generic_size_c(const unsigned char *src,
   return satd;
 }
 
-int od_mc_compute_satd_4x4_c(const unsigned char *src, int systride,
+int od_mc_compute_satd8_4x4_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd_generic_size_c(src, systride, ref, dystride, 2);
+  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 2);
   return satd;
 }
 
-int od_mc_compute_satd_8x8_c(const unsigned char *src, int systride,
+int od_mc_compute_satd8_8x8_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd_generic_size_c(src, systride, ref, dystride, 3);
+  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 3);
   return satd;
 }
 
-int od_mc_compute_satd_16x16_c(const unsigned char *src, int systride,
+int od_mc_compute_satd8_16x16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd_generic_size_c(src, systride, ref, dystride, 4);
+  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 4);
   return satd;
 }
 
-int od_mc_compute_satd_32x32_c(const unsigned char *src, int systride,
+int od_mc_compute_satd8_32x32_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd_generic_size_c(src, systride, ref, dystride, 5);
+  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 5);
   return satd;
 }
 
 /*Computes the SAD of the input image against the given predictor.*/
 static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
- int pystride, int pxstride, int pli, int x, int y, int log_blk_sz) {
+ int pystride, int pli, int x, int y, int log_blk_sz) {
   od_state *state;
   od_img_plane *iplane;
   unsigned char *src;
@@ -1596,8 +1592,12 @@ static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   int w;
   int h;
   int32_t ret;
+  int pxstride;
   state = &enc->state;
   iplane = enc->input_img.planes + pli;
+  pxstride = 1;
+  /*The p data is 8 bit dept, the input image had better be as well.*/
+  OD_ASSERT(iplane->xstride == 1);
   /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
@@ -1622,38 +1622,30 @@ static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   cliph = ((state->info.pic_height + (1 << iplane->ydec) - 1) >> iplane->ydec)
    - y;
   h = OD_MINI(h, cliph);
-  /*OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
-   "[%i, %i]x[%i, %i]", x, y, w, h));*/
   /*Compute the SAD.*/
   src = iplane->data + y*iplane->ystride + x*iplane->xstride;
-  if (pxstride != 1) {
-    /*Default C implementation.*/
-    ret = od_mc_compute_sad_c(src, iplane->ystride,
-     p, pystride, pxstride, w, h);
-  }
-  else if (w == 4 && h == 4) {
-    ret = (*enc->opt_vtbl.mc_compute_sad_4x4_xstride_1)(src, iplane->ystride,
+  if (w == 4 && h == 4) {
+    ret = (*enc->opt_vtbl.mc_compute_sad8_4x4)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 8 && h == 8) {
-    ret = (*enc->opt_vtbl.mc_compute_sad_8x8_xstride_1)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_sad8_8x8)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 16 && h == 16) {
-    ret = (*enc->opt_vtbl.mc_compute_sad_16x16_xstride_1)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_sad8_16x16)(src, iplane->ystride,
      p, pystride);
   }
   else {
     /*Default C implementation.*/
-    ret = od_mc_compute_sad_c(src, iplane->ystride,
-     p, pystride, pxstride, w, h);
+    ret = od_mc_compute_sad8_c(src, iplane->ystride, p, pystride, w, h);
   }
   return ret;
 }
 
 /*Computes the SATD of the input image block against the given predictor.*/
 static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
- int pystride, int pxstride, int pli, int x, int y, int log_blk_sz) {
+ int pystride, int pli, int x, int y, int log_blk_sz) {
   od_state *state;
   od_img_plane *iplane;
   unsigned char *src;
@@ -1664,8 +1656,12 @@ static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
   int w;
   int h;
   int32_t ret;
+  int pxstride;
   state = &enc->state;
   iplane = enc->input_img.planes + pli;
+  pxstride = 1;
+  /*The p data is 8 bit dept, the input image had better be as well.*/
+  OD_ASSERT(iplane->xstride == 1);
   /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
@@ -1690,34 +1686,29 @@ static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
   cliph = ((state->info.pic_height + (1 << iplane->ydec) - 1) >> iplane->ydec)
    - y;
   h = OD_MINI(h, cliph);
-  /*OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
-   "[%i, %i]x[%i, %i]", x, y, w, h));*/
   /*Compute the SATD.*/
   src = iplane->data + y*iplane->ystride + x*iplane->xstride;
   if (w == 4 && h == 4) {
-    ret = (*enc->opt_vtbl.mc_compute_satd_4x4)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd8_4x4)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 8 && h == 8) {
-    ret = (*enc->opt_vtbl.mc_compute_satd_8x8)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd8_8x8)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 16 && h == 16) {
-    ret = (*enc->opt_vtbl.mc_compute_satd_16x16)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd8_16x16)(src, iplane->ystride,
      p, pystride);
   }
+  else if  (w == 32 && h == 32)
+    ret = (*enc->opt_vtbl.mc_compute_satd8_32x32)(src, iplane->ystride,
+     p, pystride);
   else {
-    /*Default C implementation.*/
-    if  (w == 32 && h == 32)
-      ret = (*enc->opt_vtbl.mc_compute_satd_32x32)(src, iplane->ystride,
-          p, pystride);
-    else {
-      /*If not square SATD (on boundary always), run sad for now.
-         TODO: Try padding 0's for undefined area of difference image,
-         then apply square SATD.*/
-      ret = od_mc_compute_sad_c(src, iplane->ystride,
-       p, pystride, pxstride, w, h);
-    }
+    /*If not square SATD (on boundary always), run sad for now.
+      TODO: Try padding 0's for undefined area of difference image,
+      then apply square SATD.*/
+    ret = od_mc_compute_sad8_c(src, iplane->ystride,
+     p, pystride, w, h);
   }
   return ret;
 }
@@ -2138,7 +2129,7 @@ static int od_mv_est_bits(od_mv_est_ctx *est, int equal_mvs,
 }
 
 /*Computes the SAD of a whole-pel BMA block with the given parameters.*/
-/*Note: The od_enc_sad8() is now always called with xstride = 1,
+/*Note: The od_enc_sad8() now always has xstride = 1,
    because MC ref image is NOT upsampled at frame level.*/
 static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
  int ref, int bx, int by, int mvx, int mvy, int log_mvb_sz) {
@@ -2157,7 +2148,7 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
   dx = bx + mvx;
   dy = by + mvy;
   ret = od_enc_sad8(est->enc, iplane->data + dy *iplane->ystride + dx,
-   iplane->ystride, 1, 0, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN);
+   iplane->ystride, 0, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
     unsigned char *ref_img;
@@ -2179,7 +2170,7 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
          MC block.*/
       ret += od_enc_sad8(est->enc, state->mc_buf[4],
        1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec),
-       1, pli, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN) >> OD_MC_CHROMA_SCALE;
+       pli, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN) >> OD_MC_CHROMA_SCALE;
     }
   }
   return ret;
@@ -2194,7 +2185,7 @@ static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
   od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
    state->ref_imgs + state->ref_imgi[ref], 0, vx, vy, oc, s, log_mvb_sz);
   ret = est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
-   1, 0, vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN,
+   0, vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
@@ -2202,7 +2193,7 @@ static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
       od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
        state->ref_imgs + state->ref_imgi[ref], pli, vx, vy, oc, s, log_mvb_sz);
       ret += est->compute_distortion(est->enc, state->mc_buf[4],
-       OD_MVBSIZE_MAX, 1, pli, vx << OD_LOG_MVBSIZE_MIN,
+       OD_MVBSIZE_MAX, pli, vx << OD_LOG_MVBSIZE_MIN,
        vy << OD_LOG_MVBSIZE_MIN, log_mvb_sz + OD_LOG_MVBSIZE_MIN)
        >> OD_MC_CHROMA_SCALE;
     }
