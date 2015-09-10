@@ -216,7 +216,7 @@ static int od_state_ref_imgs_init(od_state *state, int nrefs) {
   info = &state->info;
   data_sz = 0;
   reference_bytes = state->full_precision_references ? 2 : 1;
-  reference_bits = state->full_precision_references ? 8<<OD_COEFF_SHIFT : 8;
+  reference_bits = state->full_precision_references ? 8+OD_COEFF_SHIFT : 8;
   /*TODO: Check for overflow before allocating.*/
   frame_buf_width = state->frame_width + (OD_UMV_PADDING << 1);
   frame_buf_height = state->frame_height + (OD_UMV_PADDING << 1);
@@ -325,7 +325,7 @@ static int od_state_init_impl(od_state *state, const daala_info *info) {
    ~(OD_BSIZE_MAX - 1);
   state->nhmvbs = state->frame_width >> OD_LOG_MVBSIZE_MIN;
   state->nvmvbs = state->frame_height >> OD_LOG_MVBSIZE_MIN;
-#if 0
+#if 1
   state->full_precision_references = 1;
 #else
   state->full_precision_references = info->bitdepth > 8;
@@ -770,9 +770,9 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
       if(xstride>1){
         for (x = 0; x < (pic_width + xdec) >> xdec; x++) {
           int value;
-          value = *(((uint16_t *)(img->planes[pli].data)
-           + ystride*y + xstride*x) + img->planes[pli].bitdepth-9)
-           >> (img->planes[pli].bitdepth-8);
+          value = *((uint16_t *)(img->planes[pli].data + ystride*y + xstride*x))
+           + (1 << img->planes[pli].bitdepth >> 9)
+           >> (img->planes[pli].bitdepth - 8);
           if(fputc(value, fp) == EOF){
             fprintf(stderr, "Error writing to \"%s\".\n", fname);
             return OD_EFAULT;

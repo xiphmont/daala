@@ -220,7 +220,7 @@ static int od_enc_init(od_enc_ctx *enc, const daala_info *info) {
   enc->bs = (od_block_size_comp *)malloc(sizeof(*enc->bs));
   data_sz = 0;
   reference_bytes = enc->state.full_precision_references ? 2 : 1;
-  reference_bits = enc->state.full_precision_references ? 8<<OD_COEFF_SHIFT : 8;
+  reference_bits = enc->state.full_precision_references ? 8+OD_COEFF_SHIFT : 8;
   /*TODO: Check for overflow before allocating.*/
   frame_buf_width = enc->state.frame_width + (OD_UMV_PADDING << 1);
   frame_buf_height = enc->state.frame_height + (OD_UMV_PADDING << 1);
@@ -1878,8 +1878,8 @@ static void od_img_dump_padded(daala_enc_ctx *enc) {
   *&img = enc->input_img;
   for (pli = 0; pli < nplanes; pli++) {
     img.planes[pli].data -=
-      img.planes[pli].xstride*(OD_UMV_PADDING>>info->plane_info[pli].xdec)
-      +img.planes[pli].ystride*(OD_UMV_PADDING>>info->plane_info[pli].ydec);
+     img.planes[pli].xstride*(OD_UMV_PADDING>>info->plane_info[pli].xdec)
+     +img.planes[pli].ystride*(OD_UMV_PADDING>>info->plane_info[pli].ydec);
   }
   img.width += OD_UMV_PADDING<<1;
   img.height += OD_UMV_PADDING<<1;
@@ -2338,9 +2338,9 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   od_img_copy_pad(enc, img);
 
 #if defined(OD_DUMP_IMAGES)
-  if (od_logging_active(OD_LOG_GENERIC, OD_LOG_DEBUG)) {
+
     od_img_dump_padded(enc);
-  }
+
 #endif
   /* Check if the frame should be a keyframe. */
   mbctx.is_keyframe = (enc->state.cur_time %

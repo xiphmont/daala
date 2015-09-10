@@ -1368,17 +1368,13 @@ int od_mc_compute_sad8_32x32_c(const unsigned char *src, int systride,
 
 int od_mc_compute_sad16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride, int w, int h) {
-  const uint16_t *src16;
-  const uint16_t *ref16;
   int i;
   int j;
   int32_t ret;
-  src16 = (uint16_t *)src;
-  ref16 = (uint16_t *)ref;
   ret = 0;
   for (j = 0; j < h; j++) {
     for (i = 0; i < w; i++) {
-      ret += abs(ref16[i] - src16[i]);
+      ret += abs(((uint16_t *)ref)[i] - ((uint16_t *)src)[i]);
     }
     src += systride;
     ref += dystride;
@@ -1626,20 +1622,18 @@ int od_mc_compute_satd8_32x32_c(const unsigned char *src, int systride,
 
 static int od_mc_compute_satd16_c(const unsigned char *src,
  int systride, const unsigned char *ref, int dystride, const int log_blk_sz) {
-  const uint16_t *src16;
-  const uint16_t *ref16;
   od_coeff diff[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
   od_coeff dest[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
   int32_t satd;
   int x;
   int y;
   int blk_size = 1 << log_blk_sz;
-  src16 = (uint16_t *)src;
-  ref16 = (uint16_t *)ref;
   for (y = 0; y < blk_size; y++) {
     for (x = 0; x < blk_size; x++) {
-      diff[y*blk_size + x] = src16[systride*y + x] - ref16[dystride*y + x];
+      diff[y*blk_size + x] = ((uint16_t *)src)[x] - ((uint16_t *)ref)[x];
     }
+    src += systride;
+    ref += dystride;
   }
   od_hadamard_2d(dest, diff, log_blk_sz);/* 2D Hadamard transform. */
   /* Absolute sum of transformed coefficients. */
@@ -2244,12 +2238,14 @@ static int32_t od_mv_est_bma_sad(od_mv_est_ctx *est,
   daala_enc_ctx *enc;
   od_state *state;
   od_img_plane *iplane;
+  int ref_bytes;
   int32_t ret;
   int refi;
   int dx;
   int dy;
   enc = est->enc;
   state = &enc->state;
+  ref_bytes = state->full_precision_references ? 2 : 1;
   refi = state->ref_imgi[ref];
   iplane = state->ref_imgs[refi].planes + 0;
   OD_ASSERT(iplane->xdec == 0 && iplane->ydec == 0);
@@ -2279,7 +2275,8 @@ static int32_t od_mv_est_bma_sad(od_mv_est_ctx *est,
       /*Then, calculate SAD between a target block and the subpel interpolated
          MC block.*/
       ret += od_enc_sad(est->enc, state->mc_buf[4],
-       1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec), iplane->xstride,
+       ref_bytes << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec),
+       ref_bytes,
        pli, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN) >> OD_MC_CHROMA_SCALE;
     }
   }
@@ -2291,20 +2288,24 @@ static int32_t od_mv_est_sad(od_mv_est_ctx *est,
  int ref, int vx, int vy, int oc, int s, int log_mvb_sz) {
   od_state *state;
   int32_t ret;
+  int ref_bytes;
   state = &est->enc->state;
-  od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
+  ref_bytes = state->full_precision_references ? 2 : 1;
+  od_state_pred_block_from_setup(state, state->mc_buf[4],
+   ref_bytes*OD_MVBSIZE_MAX,
    state->ref_imgs + state->ref_imgi[ref], 0, vx, vy, oc, s, log_mvb_sz);
-  ret = est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
-   state->full_precision_references ? 2 : 1,
+  ret = est->compute_distortion(est->enc, state->mc_buf[4],
+   ref_bytes*OD_MVBSIZE_MAX, ref_bytes,
    0, vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
     for (pli = 1; pli < est->enc->input_img.nplanes; pli++) {
-      od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
+      od_state_pred_block_from_setup(state, state->mc_buf[4],
+       ref_bytes*OD_MVBSIZE_MAX,
        state->ref_imgs + state->ref_imgi[ref], pli, vx, vy, oc, s, log_mvb_sz);
-      ret += est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
-       state->full_precision_references ? 2 : 1,
+      ret += est->compute_distortion(est->enc, state->mc_buf[4],
+       ref_bytes*OD_MVBSIZE_MAX, ref_bytes,
        pli, vx << OD_LOG_MVBSIZE_MIN,
        vy << OD_LOG_MVBSIZE_MIN, log_mvb_sz + OD_LOG_MVBSIZE_MIN)
        >> OD_MC_CHROMA_SCALE;
