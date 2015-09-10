@@ -1361,6 +1361,51 @@ int od_mc_compute_sad8_16x16_c(const unsigned char *src, int systride,
   return od_mc_compute_sad8_c(src, systride, ref, dystride, 16, 16);
 }
 
+int od_mc_compute_sad8_32x32_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  return od_mc_compute_sad8_c(src, systride, ref, dystride, 32, 32);
+}
+
+int od_mc_compute_sad16_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride, int w, int h) {
+  const uint16_t *src16;
+  const uint16_t *ref16;
+  int i;
+  int j;
+  int32_t ret;
+  src16 = (uint16_t *)src;
+  ref16 = (uint16_t *)ref;
+  ret = 0;
+  for (j = 0; j < h; j++) {
+    for (i = 0; i < w; i++) {
+      ret += abs(ref16[i] - src16[i]);
+    }
+    src += systride;
+    ref += dystride;
+  }
+  return ret >> OD_COEFF_SHIFT;
+}
+
+int od_mc_compute_sad16_4x4_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  return od_mc_compute_sad16_c(src, systride, ref, dystride, 4, 4);
+}
+
+int od_mc_compute_sad16_8x8_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  return od_mc_compute_sad16_c(src, systride, ref, dystride, 8, 8);
+}
+
+int od_mc_compute_sad16_16x16_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  return od_mc_compute_sad16_c(src, systride, ref, dystride, 16, 16);
+}
+
+int od_mc_compute_sad16_32x32_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  return od_mc_compute_sad16_c(src, systride, ref, dystride, 32, 32);
+}
+
 static const od_coeff OD_HADAMARD_4X4[] = {
   1, 1, 1, 1,
   1,-1, 1,-1,
@@ -1527,7 +1572,7 @@ static void od_hadamard_2d(od_coeff *dest, const od_coeff *diff,
    log_blk_sz);
 }
 
-static int od_mc_compute_satd8_generic_size_c(const unsigned char *src,
+static int od_mc_compute_satd8_c(const unsigned char *src,
  int systride, const unsigned char *ref, int dystride, const int log_blk_sz) {
   od_coeff diff[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
   od_coeff dest[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
@@ -1554,34 +1599,93 @@ static int od_mc_compute_satd8_generic_size_c(const unsigned char *src,
 int od_mc_compute_satd8_4x4_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 2);
+  satd = od_mc_compute_satd8_c(src, systride, ref, dystride, 2);
   return satd;
 }
 
 int od_mc_compute_satd8_8x8_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 3);
+  satd = od_mc_compute_satd8_c(src, systride, ref, dystride, 3);
   return satd;
 }
 
 int od_mc_compute_satd8_16x16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 4);
+  satd = od_mc_compute_satd8_c(src, systride, ref, dystride, 4);
   return satd;
 }
 
 int od_mc_compute_satd8_32x32_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride) {
   int satd;
-  satd = od_mc_compute_satd8_generic_size_c(src, systride, ref, dystride, 5);
+  satd = od_mc_compute_satd8_c(src, systride, ref, dystride, 5);
+  return satd;
+}
+
+static int od_mc_compute_satd16_c(const unsigned char *src,
+ int systride, const unsigned char *ref, int dystride, const int log_blk_sz) {
+  const uint16_t *src16;
+  const uint16_t *ref16;
+  od_coeff diff[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
+  od_coeff dest[OD_MVBSIZE_MAX*OD_MVBSIZE_MAX];
+  int32_t satd;
+  int x;
+  int y;
+  int blk_size = 1 << log_blk_sz;
+  src16 = (uint16_t *)src;
+  ref16 = (uint16_t *)ref;
+  for (y = 0; y < blk_size; y++) {
+    for (x = 0; x < blk_size; x++) {
+      diff[y*blk_size + x] = src16[systride*y + x] - ref16[dystride*y + x];
+    }
+  }
+  od_hadamard_2d(dest, diff, log_blk_sz);/* 2D Hadamard transform. */
+  /* Absolute sum of transformed coefficients. */
+  satd = 0;
+  for (x = 0; x < blk_size*blk_size; x++) {
+    satd += abs(dest[x]);
+  }
+  /* Normalize (for orthogonality) by block size, i.e. 2d transform gain. */
+  /* Also normalize to an 8-bit video depth */
+  satd >>= log_blk_sz + OD_COEFF_SHIFT;
+  return satd;
+}
+
+int od_mc_compute_satd16_4x4_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  int satd;
+  satd = od_mc_compute_satd16_c(src, systride, ref, dystride, 2);
+  return satd;
+}
+
+int od_mc_compute_satd16_8x8_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  int satd;
+  satd = od_mc_compute_satd16_c(src, systride, ref, dystride, 3);
+  return satd;
+}
+
+int od_mc_compute_satd16_16x16_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  int satd;
+  satd = od_mc_compute_satd16_c(src, systride, ref, dystride, 4);
+  return satd;
+}
+
+int od_mc_compute_satd16_32x32_c(const unsigned char *src, int systride,
+ const unsigned char *ref, int dystride) {
+  int satd;
+  satd = od_mc_compute_satd16_c(src, systride, ref, dystride, 5);
   return satd;
 }
 
 /*Computes the SAD of the input image against the given predictor.*/
-static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
- int pystride, int pli, int x, int y, int log_blk_sz) {
+/*Plane data is either 8 bit or full-precision (8+OD_COEFF_SHIFT),
+   as indicated by the xstride.*/
+static int32_t od_enc_sad(od_enc_ctx *enc, const unsigned char *p,
+ int pystride, int pxstride, int pli, int x, int y, int log_blk_sz) {
   od_state *state;
   od_img_plane *iplane;
   unsigned char *src;
@@ -1592,13 +1696,8 @@ static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   int w;
   int h;
   int32_t ret;
-  int pxstride;
   state = &enc->state;
   iplane = enc->input_img.planes + pli;
-  pxstride = 1;
-  /*The p data is 8 bit dept, the input image had better be as well.*/
-  OD_ASSERT(iplane->xstride == 1);
-  /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
   w = 1 << (log_blk_sz - iplane->xdec);
@@ -1625,27 +1724,38 @@ static int32_t od_enc_sad8(od_enc_ctx *enc, const unsigned char *p,
   /*Compute the SAD.*/
   src = iplane->data + y*iplane->ystride + x*iplane->xstride;
   if (w == 4 && h == 4) {
-    ret = (*enc->opt_vtbl.mc_compute_sad8_4x4)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_sad_4x4)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 8 && h == 8) {
-    ret = (*enc->opt_vtbl.mc_compute_sad8_8x8)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_sad_8x8)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 16 && h == 16) {
-    ret = (*enc->opt_vtbl.mc_compute_sad8_16x16)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_sad_16x16)(src, iplane->ystride,
+     p, pystride);
+  }
+  else if (w == 32 && h == 32) {
+    ret = (*enc->opt_vtbl.mc_compute_sad_32x32)(src, iplane->ystride,
      p, pystride);
   }
   else {
     /*Default C implementation.*/
-    ret = od_mc_compute_sad8_c(src, iplane->ystride, p, pystride, w, h);
+    if(pxstride == 1){
+      ret = od_mc_compute_sad8_c(src, iplane->ystride, p, pystride, w, h);
+    }
+    else{
+      ret = od_mc_compute_sad16_c(src, iplane->ystride, p, pystride, w, h);
+    }
   }
   return ret;
 }
 
 /*Computes the SATD of the input image block against the given predictor.*/
-static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
- int pystride, int pli, int x, int y, int log_blk_sz) {
+/*Plane data is either 8 bit or full-precision (8+OD_COEFF_SHIFT),
+   as indicated by the xstride.*/
+static int32_t od_enc_satd(od_enc_ctx *enc, const unsigned char *p,
+ int pystride, int pxstride, int pli, int x, int y, int log_blk_sz) {
   od_state *state;
   od_img_plane *iplane;
   unsigned char *src;
@@ -1656,12 +1766,8 @@ static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
   int w;
   int h;
   int32_t ret;
-  int pxstride;
   state = &enc->state;
   iplane = enc->input_img.planes + pli;
-  pxstride = 1;
-  /*The p data is 8 bit dept, the input image had better be as well.*/
-  OD_ASSERT(iplane->xstride == 1);
   /*Compute the block dimensions in the target image plane.*/
   x >>= iplane->xdec;
   y >>= iplane->ydec;
@@ -1689,26 +1795,30 @@ static int32_t od_enc_satd8(od_enc_ctx *enc, const unsigned char *p,
   /*Compute the SATD.*/
   src = iplane->data + y*iplane->ystride + x*iplane->xstride;
   if (w == 4 && h == 4) {
-    ret = (*enc->opt_vtbl.mc_compute_satd8_4x4)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd_4x4)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 8 && h == 8) {
-    ret = (*enc->opt_vtbl.mc_compute_satd8_8x8)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd_8x8)(src, iplane->ystride,
      p, pystride);
   }
   else if (w == 16 && h == 16) {
-    ret = (*enc->opt_vtbl.mc_compute_satd8_16x16)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd_16x16)(src, iplane->ystride,
      p, pystride);
   }
   else if  (w == 32 && h == 32)
-    ret = (*enc->opt_vtbl.mc_compute_satd8_32x32)(src, iplane->ystride,
+    ret = (*enc->opt_vtbl.mc_compute_satd_32x32)(src, iplane->ystride,
      p, pystride);
   else {
     /*If not square SATD (on boundary always), run sad for now.
       TODO: Try padding 0's for undefined area of difference image,
       then apply square SATD.*/
-    ret = od_mc_compute_sad8_c(src, iplane->ystride,
-     p, pystride, w, h);
+    if(pxstride == 1){
+      ret = od_mc_compute_sad8_c(src, iplane->ystride, p, pystride, w, h);
+    }
+    else{
+      ret = od_mc_compute_sad16_c(src, iplane->ystride, p, pystride, w, h);
+    }
   }
   return ret;
 }
@@ -2129,9 +2239,7 @@ static int od_mv_est_bits(od_mv_est_ctx *est, int equal_mvs,
 }
 
 /*Computes the SAD of a whole-pel BMA block with the given parameters.*/
-/*Note: The od_enc_sad8() now always has xstride = 1,
-   because MC ref image is NOT upsampled at frame level.*/
-static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
+static int32_t od_mv_est_bma_sad(od_mv_est_ctx *est,
  int ref, int bx, int by, int mvx, int mvy, int log_mvb_sz) {
   daala_enc_ctx *enc;
   od_state *state;
@@ -2147,8 +2255,10 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
   OD_ASSERT(iplane->xdec == 0 && iplane->ydec == 0);
   dx = bx + mvx;
   dy = by + mvy;
-  ret = od_enc_sad8(est->enc, iplane->data + dy *iplane->ystride + dx,
-   iplane->ystride, 0, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN);
+  ret = od_enc_sad(est->enc,
+   iplane->data + dy*iplane->ystride + dx*iplane->xstride,
+   iplane->ystride, iplane->xstride, 0, bx, by,
+   log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
     int pli;
     unsigned char *ref_img;
@@ -2161,15 +2271,15 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
       /*If the input chroma plane is sub-sampled, then the candidate block with
          subpel position for BMA search is interpolated at block level.*/
       ref_img = iplane->data + (by >> iplane->ydec)*iplane->ystride
-       + (bx >> iplane->xdec);
-      od_mc_predict1fmv8_c(state->mc_buf[4], ref_img, iplane->ystride,
+       + (bx >> iplane->xdec)*iplane->xstride;
+      od_mc_predict1fmv(state, state->mc_buf[4], ref_img, iplane->ystride,
        mvx << (3 - iplane->xdec), mvy << (3 - iplane->ydec),
        log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec,
        log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->ydec);
       /*Then, calculate SAD between a target block and the subpel interpolated
          MC block.*/
-      ret += od_enc_sad8(est->enc, state->mc_buf[4],
-       1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec),
+      ret += od_enc_sad(est->enc, state->mc_buf[4],
+       1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec), iplane->xstride,
        pli, bx, by, log_mvb_sz + OD_LOG_MVBSIZE_MIN) >> OD_MC_CHROMA_SCALE;
     }
   }
@@ -2177,7 +2287,7 @@ static int32_t od_mv_est_bma_sad8(od_mv_est_ctx *est,
 }
 
 /*Computes the SAD of a block with the given parameters.*/
-static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
+static int32_t od_mv_est_sad(od_mv_est_ctx *est,
  int ref, int vx, int vy, int oc, int s, int log_mvb_sz) {
   od_state *state;
   int32_t ret;
@@ -2185,6 +2295,7 @@ static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
   od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
    state->ref_imgs + state->ref_imgi[ref], 0, vx, vy, oc, s, log_mvb_sz);
   ret = est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
+   state->full_precision_references ? 2 : 1,
    0, vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN);
   if (est->flags & OD_MC_USE_CHROMA) {
@@ -2192,8 +2303,9 @@ static int32_t od_mv_est_sad8(od_mv_est_ctx *est,
     for (pli = 1; pli < est->enc->input_img.nplanes; pli++) {
       od_state_pred_block_from_setup(state, state->mc_buf[4], OD_MVBSIZE_MAX,
        state->ref_imgs + state->ref_imgi[ref], pli, vx, vy, oc, s, log_mvb_sz);
-      ret += est->compute_distortion(est->enc, state->mc_buf[4],
-       OD_MVBSIZE_MAX, pli, vx << OD_LOG_MVBSIZE_MIN,
+      ret += est->compute_distortion(est->enc, state->mc_buf[4], OD_MVBSIZE_MAX,
+       state->full_precision_references ? 2 : 1,
+       pli, vx << OD_LOG_MVBSIZE_MIN,
        vy << OD_LOG_MVBSIZE_MIN, log_mvb_sz + OD_LOG_MVBSIZE_MIN)
        >> OD_MC_CHROMA_SCALE;
     }
@@ -2264,7 +2376,7 @@ void od_mv_est_check_rd_block_state(od_mv_est_ctx *est,
        vx, vy, s, block->s));
       OD_ASSERT(block->s == s);
     }
-    sad = od_mv_est_sad8(est, ref, vx, vy, oc, s, log_mvb_sz);
+    sad = od_mv_est_sad(est, ref, vx, vy, oc, s, log_mvb_sz);
     if (block->sad != sad) {
       OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_WARN,
        "Failure at node (%i, %i): sad should be %i (is %i)",
@@ -2491,7 +2603,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
      x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
   }
 #endif
-  best_sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+  best_sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
   best_rate = od_mv_est_bits(est, equal_mvs,
    candx << 1, candy << 1, pred[0], pred[1]);
   best_cost = (best_sad << OD_ERROR_SCALE) + best_rate*est->lambda;
@@ -2547,7 +2659,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
          x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
       }
 #endif
-      sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+      sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
       rate = od_mv_est_bits(est, equal_mvs,
        candx << 1, candy << 1, pred[0], pred[1]);
       cost = (sad << OD_ERROR_SCALE) + rate*est->lambda;
@@ -2594,7 +2706,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
            x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
         }
 #endif
-        sad = od_mv_est_bma_sad8(est, ref, bx, by, candx, candy, log_mvb_sz);
+        sad = od_mv_est_bma_sad(est, ref, bx, by, candx, candy, log_mvb_sz);
         rate = od_mv_est_bits(est, equal_mvs,
          candx << 1, candy << 1, pred[0], pred[1]);
         cost = (sad << OD_ERROR_SCALE) + rate*est->lambda;
@@ -2653,7 +2765,7 @@ static void od_mv_est_init_mv(od_mv_est_ctx *est, int ref, int vx, int vy) {
                x0 + (candx << 1), y0 + (candy << 1), OD_YCbCr_MVCAND);
             }
 #endif
-            sad = od_mv_est_bma_sad8(est,
+            sad = od_mv_est_bma_sad(est,
              ref, bx, by, candx, candy, log_mvb_sz);
             rate = od_mv_est_bits(est, equal_mvs,
              candx << 1, candy << 1, pred[0], pred[1]);
@@ -3465,7 +3577,7 @@ static void od_mv_est_calc_sads(od_mv_est_ctx *est, int ref) {
         for (vx = 0; vx < nhmvbs; vx++) {
           oc = (vx & 1) ^ ((vy & 1) << 1 | (vy & 1));
           for (s = 0; s < smax; s++) {
-            sad_cache_row[vx][s] = (uint16_t)od_mv_est_sad8(est, ref,
+            sad_cache_row[vx][s] = (uint16_t)od_mv_est_sad(est, ref,
              vx << log_mvb_sz, vy << log_mvb_sz, oc, s, log_mvb_sz);
           }
           /*While we're here, fill in the block's setup state.*/
@@ -3489,7 +3601,7 @@ static void od_mv_est_calc_sads(od_mv_est_ctx *est, int ref) {
         mv_row[vx << log_mvb_sz].oc = 0;
         mv_row[vx << log_mvb_sz].s = 3;
         mv_row[vx << log_mvb_sz].log_mvb_sz = log_mvb_sz;
-        mv_row[vx << log_mvb_sz].sad = od_mv_est_sad8(est, ref,
+        mv_row[vx << log_mvb_sz].sad = od_mv_est_sad(est, ref,
          vx << OD_LOG_MVBSIZE_MIN, vy << OD_LOG_MVBSIZE_MIN, 0, 3, log_mvb_sz);
       }
     }
@@ -3611,7 +3723,7 @@ static void od_mv_est_init_du(od_mv_est_ctx *est, int ref, int vx, int vy) {
       else {
         /*Cache the SAD for top-level blocks in the dd field, which is
            otherwise unused (since they cannot be decimated).*/
-        est->mvs[dvy][dvx].dd = od_mv_est_sad8(est, ref,
+        est->mvs[dvy][dvx].dd = od_mv_est_sad(est, ref,
          dvx, dvy, 0, 3, OD_LOG_MVB_DELTA0);
         dec->dd += est->mvs[dvy][dvx].dd;
         OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
@@ -4215,10 +4327,10 @@ static int od_mv_est_get_boundary_case(od_state *state,
 }
 
 /*Computes the SAD of the specified block.*/
-static int32_t od_mv_est_block_sad8(od_mv_est_ctx *est, int ref,
+static int32_t od_mv_est_block_sad(od_mv_est_ctx *est, int ref,
  od_mv_node *block) {
   int32_t ret;
-  ret = od_mv_est_sad8(est, ref, block->vx, block->vy,
+  ret = od_mv_est_sad(est, ref, block->vx, block->vy,
    block->oc, block->s, block->log_mvb_sz);
   OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
    "Adding SAD (%3i, %3i) [%2ix%2i]: %6i", block->vx << OD_LOG_MVBSIZE_MIN,
@@ -4229,7 +4341,7 @@ static int32_t od_mv_est_block_sad8(od_mv_est_ctx *est, int ref,
 
 /*Gets the change in SAD for the blocks affected by the given DP node, using
    the current state of the grid.*/
-static int32_t od_mv_dp_get_sad_change8(od_mv_est_ctx *est, int ref,
+static int32_t od_mv_dp_get_sad_change(od_mv_est_ctx *est, int ref,
  od_mv_dp_node *dp, int32_t block_sads[OD_DP_NBLOCKS_MAX]) {
   int bi;
   int32_t dd;
@@ -4237,7 +4349,7 @@ static int32_t od_mv_dp_get_sad_change8(od_mv_est_ctx *est, int ref,
   for (bi = 0; bi < dp->nblocks; bi++) {
     od_mv_node *block;
     block = dp->blocks[bi];
-    block_sads[bi] = od_mv_est_block_sad8(est, ref, block);
+    block_sads[bi] = od_mv_est_block_sad(est, ref, block);
     OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
      "SAD change for block (%i, %i) [%ix%i]: %i - %i = %i", block->vx,
      block->vy, 1 << (block->log_mvb_sz + OD_LOG_MVBSIZE_MIN),
@@ -4963,7 +5075,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
     od_mv_dp_row_init(est, dp_node, vx, vy, NULL);
     od_mv_dp_first_row_block_setup(est, dp_node, vx, vy);
     OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG, "TESTING block SADs:"));
-    od_mv_dp_get_sad_change8(est, ref, dp_node, block_sads[0]);
+    od_mv_dp_get_sad_change(est, ref, dp_node, block_sads[0]);
     /*Compute the set of states for the first node.*/
     b = od_mv_est_get_boundary_case(state, vx, vy, curx, cury,
      1 << log_dsz, log_mvb_sz + OD_LOG_MVBSIZE_MIN);
@@ -4977,7 +5089,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
       mvg->mv[1] = cstate->mv[1];
       cstate->dr = od_mv_dp_get_rate_change(est, dp_node,
        &cstate->mv_rate, cstate->pred_mv_rates, -1, mv_res);
-      cstate->dd = od_mv_dp_get_sad_change8(est, ref, dp_node,
+      cstate->dd = od_mv_dp_get_sad_change(est, ref, dp_node,
        cstate->block_sads);
       OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
        "State: %i (%g, %g)  dr: %i  dd: %i  dopt: %i",
@@ -5018,7 +5130,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
       if (od_logging_active(OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG)) {
         pmvg->mv[0] = dp_node[0].original_mv[0];
         pmvg->mv[0] = dp_node[0].original_mv[0];
-        od_mv_dp_get_sad_change8(est, ref, dp_node + 1, block_sads[0]);
+        od_mv_dp_get_sad_change(est, ref, dp_node + 1, block_sads[0]);
       }
       /*Compute the set of states for this node.*/
       b = od_mv_est_get_boundary_case(state,
@@ -5043,7 +5155,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
            cur_mv_rates + si, pred_mv_rates[si], si, mv_res);
           /*Test against the previous state.*/
           dr = pstate->dr + cstate->dr;
-          dd = pstate->dd + od_mv_dp_get_sad_change8(est,
+          dd = pstate->dd + od_mv_dp_get_sad_change(est,
            ref, dp_node + 1, block_sads[si]);
           cost = dr*est->lambda + (dd << OD_ERROR_SCALE);
           OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
@@ -5087,7 +5199,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
       if (od_logging_active(OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG)) {
         pmvg->mv[0] = dp_node[0].original_mv[0];
         pmvg->mv[1] = dp_node[0].original_mv[1];
-        od_mv_dp_get_sad_change8(est, ref, dp_node + 1, block_sads[0]);
+        od_mv_dp_get_sad_change(est, ref, dp_node + 1, block_sads[0]);
       }
       for (si = 0; si < dp_node[0].nstates; si++) {
         pstate = dp_node[0].states + si;
@@ -5095,7 +5207,7 @@ static int32_t od_mv_est_refine_row(od_mv_est_ctx *est,
         pmvg->mv[1] = pstate->mv[1];
         /*Test against the state with a following edge.*/
         dr = pstate->dr;
-        dd = pstate->dd + od_mv_dp_get_sad_change8(est,
+        dd = pstate->dd + od_mv_dp_get_sad_change(est,
          ref, dp_node + 1, block_sads[si]);
         cost = dr*est->lambda + (dd << OD_ERROR_SCALE);
         OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
@@ -5565,7 +5677,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
     od_mv_dp_first_col_block_setup(est, dp_node, vx, vy);
     OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG, "TESTING block SADs:"));
     if (od_logging_active(OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG)) {
-      od_mv_dp_get_sad_change8(est, ref, dp_node, block_sads[0]);
+      od_mv_dp_get_sad_change(est, ref, dp_node, block_sads[0]);
     }
     /*Compute the set of states for the first node.*/
     b = od_mv_est_get_boundary_case(state,
@@ -5580,7 +5692,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
       mvg->mv[1] = cstate->mv[1];
       cstate->dr = od_mv_dp_get_rate_change(est, dp_node,
        &cstate->mv_rate, cstate->pred_mv_rates, -1, mv_res);
-      cstate->dd = od_mv_dp_get_sad_change8(est, ref, dp_node,
+      cstate->dd = od_mv_dp_get_sad_change(est, ref, dp_node,
        cstate->block_sads);
       OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
        "State: %i  dr: %i  dd: %i  dopt: %i", sitei, cstate->dr, cstate->dd,
@@ -5620,7 +5732,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
       if (od_logging_active(OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG)) {
         pmvg->mv[0] = dp_node[0].original_mv[0];
         pmvg->mv[0] = dp_node[0].original_mv[0];
-        od_mv_dp_get_sad_change8(est, ref, dp_node + 1, block_sads[0]);
+        od_mv_dp_get_sad_change(est, ref, dp_node + 1, block_sads[0]);
       }
       /*Compute the set of states for this node.*/
       b = od_mv_est_get_boundary_case(state,
@@ -5645,7 +5757,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
            cur_mv_rates + si, pred_mv_rates[si], si, mv_res);
           /*Test against the previous state.*/
           dr = pstate->dr + cstate->dr;
-          dd = pstate->dd + od_mv_dp_get_sad_change8(est,
+          dd = pstate->dd + od_mv_dp_get_sad_change(est,
            ref, dp_node + 1, block_sads[si]);
           cost = dr*est->lambda + (dd << OD_ERROR_SCALE);
           OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
@@ -5689,7 +5801,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
       if (od_logging_active(OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG)) {
         pmvg->mv[0] = dp_node[0].original_mv[0];
         pmvg->mv[1] = dp_node[0].original_mv[1];
-        od_mv_dp_get_sad_change8(est, ref, dp_node + 1, block_sads[0]);
+        od_mv_dp_get_sad_change(est, ref, dp_node + 1, block_sads[0]);
       }
       for (si = 0; si < dp_node[0].nstates; si++) {
         pstate = dp_node[0].states + si;
@@ -5697,7 +5809,7 @@ static int32_t od_mv_est_refine_col(od_mv_est_ctx *est,
         pmvg->mv[1] = pstate->mv[1];
         /*Test against the state with a following edge.*/
         dr = pstate->dr;
-        dd = pstate->dd + od_mv_dp_get_sad_change8(est,
+        dd = pstate->dd + od_mv_dp_get_sad_change(est,
          ref, dp_node + 1, block_sads[si]);
         cost = dr*est->lambda + (dd << OD_ERROR_SCALE);
         OD_LOG((OD_LOG_MOTION_ESTIMATION, OD_LOG_DEBUG,
@@ -5909,7 +6021,7 @@ void od_mv_est_reset_rd_block_state(od_mv_est_ctx *est,
       oc = 0;
       s = 3;
     }
-    sad = od_mv_est_sad8(est, ref, vx, vy, oc, s, log_mvb_sz);
+    sad = od_mv_est_sad(est, ref, vx, vy, oc, s, log_mvb_sz);
     block->sad = sad;
   }
 }
@@ -6054,7 +6166,7 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
 #endif
   od_mv_est_init_mvs(est, ref);
   /*Use SAD for stages here after.*/
-  est->compute_distortion = od_enc_sad8;
+  est->compute_distortion = od_enc_sad;
   od_mv_est_decimate(est, ref);
   /*This threshold is somewhat arbitrary.
     Chen and Willson use 6000 (with SSD as an error metric).
@@ -6091,7 +6203,7 @@ void od_mv_est(od_mv_est_ctx *est, int ref, int lambda) {
     /* The two #defines below apply to sub-pel ME only. */
 # define OD_ME_SATD_THRESH_SCALE (0.7) /* 1.0 means the same as SAD. */
 # define OD_ME_SATD_LAMBDA_SCALE (0.6)
-    est->compute_distortion = od_enc_satd8;/* Use SATD from this stage. */
+    est->compute_distortion = od_enc_satd;/* Use SATD from this stage. */
     est->lambda = (int)(est->lambda*OD_ME_SATD_LAMBDA_SCALE);
     cost_thresh = (int)(cost_thresh*OD_ME_SATD_THRESH_SCALE);
     /* Reset sad values for each ME block since those are used as base

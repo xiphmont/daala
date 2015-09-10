@@ -90,22 +90,105 @@ void od_aligned_free(void *_ptr) {
   }
 }
 
-void od_img_copy(od_img* dest, od_img* src) {
-  int pli;
-  OD_ASSERT(dest->width == src->width);
-  OD_ASSERT(dest->height == src->height);
-  OD_ASSERT(dest->nplanes == src->nplanes);
-  for (pli = 0; pli < src->nplanes; pli++) {
-    int width;
-    int height;
-    int row;
-    OD_ASSERT(dest->planes[pli].bitdepth == src->planes[pli].bitdepth);
-    width = dest->width >> dest->planes[pli].xdec;
-    height = dest->height >> dest->planes[pli].ydec;
-    for (row = 0; row < height; row++) {
-      memcpy(dest->planes[pli].data + dest->planes[pli].ystride*row,
-       src->planes[pli].data + src->planes[pli].ystride*row, width);
+/*This is a smart copy that copies the intersection of the two img planes
+   and performs any needed bitdepth conversion.
+  Does not touch any padding/border/unintersected area.*/
+void od_img_plane_copy(od_img* dst, od_img* src, int pli) {
+  od_img_plane *dst_p;
+  od_img_plane *src_p;
+  unsigned char *dst_data;
+  unsigned char *src_data;
+  int dst_xstride;
+  int dst_ystride;
+  int src_xstride;
+  int src_ystride;
+  int dst_xdec;
+  int dst_ydec;
+  int src_xdec;
+  int src_ydec;
+  int dst_plane_width;
+  int dst_plane_height;
+  int src_plane_width;
+  int src_plane_height;
+  int w;
+  int h;
+  int x;
+  int y;
+
+  if (pli >= dst->nplanes || pli >= src->nplanes) {
+    return;
+  }
+  dst_p = dst->planes+pli;
+  src_p = src->planes+pli;
+  dst_xstride = dst_p->xstride;
+  dst_ystride = dst_p->ystride;
+  src_xstride = src_p->xstride;
+  src_ystride = src_p->ystride;
+  dst_xdec = dst_p->xdec;
+  dst_ydec = dst_p->ydec;
+  src_xdec = src_p->xdec;
+  src_ydec = src_p->ydec;
+  dst_data = dst_p->data;
+  src_data = src_p->data;
+  dst_plane_width = ((dst->width + (1 << dst_xdec) - 1) >> dst_xdec);
+  dst_plane_height = ((dst->height + (1 << dst_ydec) - 1) >> dst_ydec);
+  src_plane_width = ((src->width + (1 << src_xdec) - 1) >> src_xdec);
+  src_plane_height = ((src->height + (1 << src_ydec) - 1) >> src_ydec);
+  w = OD_MINI(dst_plane_width, src_plane_width);
+  h = OD_MINI(dst_plane_height, src_plane_height);
+
+  for (y = 0; y < h; y++) {
+    if (src_xstride == 1){
+      if (dst_xstride == 1){
+        OD_ASSERT(src_p->bitdepth == 8 && dst_p->bitdepth == 8);
+        OD_COPY(dst_data, src_data, w);
+      }
+      else {
+        int upshift = dst_p->bitdepth - src_p->bitdepth;
+        for (x = 0; x < w; x++) {
+          ((uint16_t *)dst_data)[x] =
+           OD_CLAMPU16(src_data[x] << upshift);
+        }
+      }
     }
+    else {
+      if (dst_xstride == 1){
+        int dnshift = src_p->bitdepth - dst_p->bitdepth;
+        for (x = 0; x < w; x++) {
+          dst_data[x] = OD_CLAMP255(((uint16_t *)src_data)[x]
+           + (1 << dnshift >> 1) >> dnshift);
+        }
+      }
+      else {
+        if (dst_p->bitdepth >= src_p->bitdepth) {
+          int upshift = dst_p->bitdepth - src_p->bitdepth;
+          for (x = 0; x < w; x++) {
+            ((uint16_t *)dst_data)[x] =
+             OD_CLAMPU16(((uint16_t *)src_data)[x] << upshift);
+          }
+        }
+        else {
+          int dnshift = src_p->bitdepth - dst_p->bitdepth;
+          for (x = 0; x < w; x++) {
+            ((uint16_t *)dst_data)[x] =
+              OD_CLAMPU16(((uint16_t *)src_data)[x]
+               + (1 << dnshift >> 1) >> dnshift);
+          }
+        }
+      }
+    }
+    dst_data += dst_ystride;
+    src_data += src_ystride;
+  }
+}
+
+/*This is a smart copy that copies the intersection of the two od_img
+   and performs any needed bitdepth conversion.
+  Does not touch any padding/border/unintersected area.*/
+void od_img_copy(od_img* dst, od_img* src) {
+  int pli;
+  for (pli=0; pli<OD_MAXI(dst->nplanes, src->nplanes); pli++) {
+    od_img_plane_copy(dst, src, pli);
   }
 }
 
@@ -125,27 +208,35 @@ static int od_state_ref_imgs_init(od_state *state, int nrefs) {
   int frame_buf_height;
   int plane_buf_width;
   int plane_buf_height;
+  int reference_bytes;
+  int reference_bits;
   int imgi;
   int pli;
-  int y;
   OD_ASSERT(nrefs == 4);
   info = &state->info;
   data_sz = 0;
+  reference_bytes = state->full_precision_references ? 2 : 1;
+  reference_bits = state->full_precision_references ? 8<<OD_COEFF_SHIFT : 8;
   /*TODO: Check for overflow before allocating.*/
   frame_buf_width = state->frame_width + (OD_UMV_PADDING << 1);
   frame_buf_height = state->frame_height + (OD_UMV_PADDING << 1);
+  /*Reserve space for the motion comp buffers.*/
+  data_sz += OD_MVBSIZE_MAX*OD_MVBSIZE_MAX*reference_bytes*5;
   for (pli = 0; pli < info->nplanes; pli++) {
     /*Reserve space for this plane in nrefs reference images.*/
     plane_buf_width = frame_buf_width >> info->plane_info[pli].xdec;
     plane_buf_height = frame_buf_height >> info->plane_info[pli].ydec;
-    data_sz += plane_buf_width*plane_buf_height*nrefs;
+    data_sz += plane_buf_width*plane_buf_height*reference_bytes*nrefs;
   }
-  /*Reserve space for the line buffer in the up-sampler.*/
-  data_sz += (frame_buf_width << 1)*8;
   state->ref_img_data = ref_img_data =
     (unsigned char *)od_aligned_malloc(data_sz, 32);
   if (OD_UNLIKELY(!ref_img_data)) {
     return OD_EFAULT;
+  }
+  /*Fill in the motion comp buffers.*/
+  for (imgi = 0; imgi < 5; imgi++) {
+    state->mc_buf[imgi] = ref_img_data;
+    ref_img_data += OD_MVBSIZE_MAX*OD_MVBSIZE_MAX*reference_bytes;
   }
   /*Fill in the reference image structures.*/
   for (imgi = 0; imgi < nrefs; imgi++) {
@@ -154,23 +245,19 @@ static int od_state_ref_imgs_init(od_state *state, int nrefs) {
     img->width = state->frame_width;
     img->height = state->frame_height;
     for (pli = 0; pli < img->nplanes; pli++) {
-      plane_buf_width = frame_buf_width >> info->plane_info[pli].xdec;
-      plane_buf_height = frame_buf_height >> info->plane_info[pli].ydec;
       iplane = img->planes + pli;
-      iplane->data = ref_img_data
-       + (OD_UMV_PADDING >> info->plane_info[pli].xdec)
-       + plane_buf_width*(OD_UMV_PADDING >> info->plane_info[pli].ydec);
-      ref_img_data += plane_buf_width*plane_buf_height;
       iplane->xdec = info->plane_info[pli].xdec;
       iplane->ydec = info->plane_info[pli].ydec;
-      iplane->xstride = 1;
-      iplane->ystride = plane_buf_width;
+      plane_buf_width = frame_buf_width >> iplane->xdec;
+      plane_buf_height = frame_buf_height >> iplane->ydec;
+      iplane->bitdepth = reference_bits;
+      iplane->xstride = reference_bytes;
+      iplane->ystride = plane_buf_width*reference_bytes;
+      iplane->data = ref_img_data
+       + (OD_UMV_PADDING >> iplane->xdec) * iplane->xstride
+       + (OD_UMV_PADDING >> iplane->ydec) * iplane->ystride;
+      ref_img_data += plane_buf_height * iplane->ystride;
     }
-  }
-  /*Fill in the line buffers.*/
-  for (y = 0; y < 8; y++) {
-    state->ref_line_buf[y] = ref_img_data + (OD_UMV_PADDING << 1);
-    ref_img_data += frame_buf_width << 1;
   }
   /*Mark all of the reference image buffers available.*/
   for (imgi = 0; imgi < nrefs; imgi++) state->ref_imgi[imgi] = -1;
@@ -193,9 +280,20 @@ void od_restore_fpu(od_state *state) {
 }
 
 void od_state_opt_vtbl_init_c(od_state *state) {
-  state->opt_vtbl.mc_predict1fmv8 = od_mc_predict1fmv8_c;
-  state->opt_vtbl.mc_blend_full8 = od_mc_blend_full8_c;
-  state->opt_vtbl.mc_blend_full_split8 = od_mc_blend_full_split8_c;
+  if(state->full_precision_references){
+    state->opt_vtbl.mc_predict1fmv = od_mc_predict1fmv16_c;
+    state->opt_vtbl.mc_blend_full = od_mc_blend_full16_c;
+    state->opt_vtbl.mc_blend_full_split = od_mc_blend_full_split16_c;
+    state->opt_vtbl.mc_blend_multi = od_mc_blend_multi16_c;
+    state->opt_vtbl.mc_blend_multi_split = od_mc_blend_multi_split16_c;
+  }
+  else{
+    state->opt_vtbl.mc_predict1fmv = od_mc_predict1fmv8_c;
+    state->opt_vtbl.mc_blend_full = od_mc_blend_full8_c;
+    state->opt_vtbl.mc_blend_full_split = od_mc_blend_full_split8_c;
+    state->opt_vtbl.mc_blend_full = od_mc_blend_multi8_c;
+    state->opt_vtbl.mc_blend_full_split = od_mc_blend_multi_split8_c;
+  }
   state->opt_vtbl.restore_fpu = od_restore_fpu_c;
   OD_COPY(state->opt_vtbl.fdct_2d, OD_FDCT_2D_C, OD_NBSIZES + 1);
   OD_COPY(state->opt_vtbl.idct_2d, OD_IDCT_2D_C, OD_NBSIZES + 1);
@@ -227,6 +325,11 @@ static int od_state_init_impl(od_state *state, const daala_info *info) {
    ~(OD_BSIZE_MAX - 1);
   state->nhmvbs = state->frame_width >> OD_LOG_MVBSIZE_MIN;
   state->nvmvbs = state->frame_height >> OD_LOG_MVBSIZE_MIN;
+#if 0
+  state->full_precision_references = 1;
+#else
+  state->full_precision_references = info->bitdepth > 8;
+#endif
   od_state_opt_vtbl_init(state);
   if (OD_UNLIKELY(od_state_ref_imgs_init(state, 4))) {
     return OD_EFAULT;
@@ -511,6 +614,7 @@ void od_state_pred_block_from_setup(od_state *state,
  unsigned char *buf, int ystride, od_img *ref, int pli,
  int vx, int vy, int oc, int s, int log_mvb_sz) {
   od_img_plane *iplane;
+  unsigned char *idata;
   od_mv_grid_pt *grid[4];
   int32_t mvx[4];
   int32_t mvy[4];
@@ -530,13 +634,15 @@ void od_state_pred_block_from_setup(od_state *state,
   }
   x = vx << (OD_LOG_MVBSIZE_MIN - iplane->xdec);
   y = vy << (OD_LOG_MVBSIZE_MIN - iplane->ydec);
-  od_mc_predict8(state, buf, ystride, iplane->data + y*iplane->ystride + x,
-   iplane->ystride, mvx, mvy, oc, s,
+  idata = iplane->data + y*iplane->ystride + x*iplane->xstride;
+  od_mc_predict(state, buf, ystride,
+   idata, iplane->ystride, mvx, mvy, oc, s,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->xdec,
    log_mvb_sz + OD_LOG_MVBSIZE_MIN - iplane->ydec);
 }
 
-void od_state_pred_block(od_state *state, unsigned char *buf, int ystride,
+void od_state_pred_block(od_state *state,
+ unsigned char *buf, int xstride, int ystride,
  od_img *ref, int pli, int vx, int vy, int log_mvb_sz) {
   int half_mvb_sz;
   half_mvb_sz = 1 << log_mvb_sz >> 1;
@@ -548,14 +654,18 @@ void od_state_pred_block(od_state *state, unsigned char *buf, int ystride,
     iplane = ref->planes + pli;
     half_xblk_sz = 1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - 1 - iplane->xdec);
     half_yblk_sz = 1 << (log_mvb_sz + OD_LOG_MVBSIZE_MIN - 1 - iplane->ydec);
-    od_state_pred_block(state, buf,
-     ystride, ref, pli, vx, vy, log_mvb_sz - 1);
-    od_state_pred_block(state, buf + half_xblk_sz,
-     ystride, ref, pli, vx + half_mvb_sz, vy, log_mvb_sz - 1);
-    od_state_pred_block(state, buf + half_yblk_sz*ystride,
-     ystride, ref, pli, vx, vy + half_mvb_sz, log_mvb_sz - 1);
-    od_state_pred_block(state, buf + half_yblk_sz*ystride + half_xblk_sz,
-     ystride, ref, pli, vx + half_mvb_sz, vy + half_mvb_sz, log_mvb_sz - 1);
+    od_state_pred_block(state,
+     buf, xstride, ystride,
+     ref, pli, vx, vy, log_mvb_sz - 1);
+    od_state_pred_block(state,
+     buf + half_xblk_sz*xstride, xstride, ystride,
+     ref, pli, vx + half_mvb_sz, vy, log_mvb_sz - 1);
+    od_state_pred_block(state,
+     buf + half_yblk_sz*ystride, xstride, ystride,
+     ref, pli, vx, vy + half_mvb_sz, log_mvb_sz - 1);
+    od_state_pred_block(state,
+     buf + half_yblk_sz*ystride + half_xblk_sz*xstride, xstride, ystride,
+     ref, pli, vx + half_mvb_sz, vy + half_mvb_sz, log_mvb_sz - 1);
   }
   else {
     int oc;
@@ -585,6 +695,7 @@ void od_state_pred_block(od_state *state, unsigned char *buf, int ystride,
   }
 }
 
+/*Takes any depth input, but outputs 8-bit YUV only for now.*/
 int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
   static const char *CHROMA_TAGS[4] = {
     " C420jpeg", "", " C422jpeg", " C444"
@@ -593,6 +704,7 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
   FILE *fp;
   int pic_width;
   int pic_height;
+  int x;
   int y;
   int pli;
   int needs_header;
@@ -648,15 +760,31 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
   for (pli = 0; pli < OD_MINI(img->nplanes, 3); pli++) {
     int xdec;
     int ydec;
+    int xstride;
     int ystride;
     xdec = img->planes[pli].xdec;
     ydec = img->planes[pli].ydec;
+    xstride = img->planes[pli].xstride;
     ystride = img->planes[pli].ystride;
     for (y = 0; y < (pic_height + ydec) >> ydec; y++) {
-      if (fwrite(img->planes[pli].data + ystride*y,
-       (pic_width + xdec) >> xdec, 1, fp) < 1) {
-        fprintf(stderr, "Error writing to \"%s\".\n", fname);
-        return OD_EFAULT;
+      if(xstride>1){
+        for (x = 0; x < (pic_width + xdec) >> xdec; x++) {
+          int value;
+          value = *(((uint16_t *)(img->planes[pli].data)
+           + ystride*y + xstride*x) + img->planes[pli].bitdepth-9)
+           >> (img->planes[pli].bitdepth-8);
+          if(fputc(value, fp) == EOF){
+            fprintf(stderr, "Error writing to \"%s\".\n", fname);
+            return OD_EFAULT;
+          }
+        }
+      }
+      else{
+        if (fwrite(img->planes[pli].data + ystride*y,
+                   (pic_width + xdec) >> xdec, 1, fp) < 1) {
+          fprintf(stderr, "Error writing to \"%s\".\n", fname);
+          return OD_EFAULT;
+        }
       }
     }
   }
@@ -666,6 +794,10 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
 #if defined(OD_DUMP_IMAGES)
 # include <png.h>
 # include <zlib.h>
+
+#define OD_IMGVAL(pli,x) (img->planes[pli].bitdepth == 8 ? \
+  ((float)(p[(pli)][(x)])) : \
+  (((uint16_t *)(p[(pli)]))[(x)] / (float)(1 << (img->planes[pli].bitdepth-8))))
 
 /*Dump a PNG of the reconstructed image, or a reference frame.*/
 int od_state_dump_img(od_state *state, od_img *img, const char *tag) {
@@ -725,10 +857,10 @@ int od_state_dump_img(od_state *state, od_img *img, const char *tag) {
       unsigned gval;
       unsigned bval;
       /*This is intentionally slow and very accurate.*/
-      yval = (p[0][0] - 16)*(1.0F/219);
+      yval = (OD_IMGVAL(0,0) - 16)*(1.0F/219);
       if (nplanes >= 3) {
-        cbval = (p[1][0] - 128)*(2*(1 - 0.114F)/224);
-        crval = (p[2][0] - 128)*(2*(1 - 0.299F)/224);
+        cbval = (OD_IMGVAL(1,0) - 128)*(2*(1 - 0.114F)/224);
+        crval = (OD_IMGVAL(2,0) - 128)*(2*(1 - 0.299F)/224);
       }
       else cbval = crval = 0;
       rval = OD_CLAMPI(0, (int)(65535*(yval + crval) + 0.5F), 65535);
@@ -743,7 +875,7 @@ int od_state_dump_img(od_state *state, od_img *img, const char *tag) {
       data[y][6*x + 5] = (unsigned char)(bval & 0xFF);
       for (pli = 0; pli < nplanes; pli++) {
         mask = (1 << img->planes[pli].xdec) - 1;
-        p[pli] += (x & mask) == mask;
+        p[pli] += ((x & mask) == mask)*img->planes[pli].xstride;
       }
     }
     for (pli = 0; pli < nplanes; pli++) {
@@ -785,13 +917,16 @@ void od_state_mc_predict(od_state *state, od_img *img_dst, od_img *img_src) {
         od_img_plane *iplane_dst;
         int blk_x;
         int blk_y;
+        int xstride;
         int ystride;
         iplane_dst = img_dst->planes + pli;
         blk_x = vx << OD_LOG_MVBSIZE_MIN >> iplane_dst->xdec;
         blk_y = vy << OD_LOG_MVBSIZE_MIN >> iplane_dst->ydec;
+        xstride = iplane_dst->xstride;
         ystride = iplane_dst->ystride;
-        od_state_pred_block(state, iplane_dst->data + blk_y*ystride + blk_x,
-         ystride, img_src, pli, vx, vy, OD_LOG_MVB_DELTA0);
+        od_state_pred_block(state,
+         iplane_dst->data + blk_y*ystride + blk_x*xstride,
+         xstride, ystride, img_src, pli, vx, vy, OD_LOG_MVB_DELTA0);
       }
     }
   }
@@ -857,44 +992,61 @@ double daala_granule_time(void *encdec, int64_t granpos) {
 }
 
 /*Extend the edge into the padding.*/
-static void od_img_plane_edge_ext8(od_img_plane *dst_p,
+static void od_img_plane_edge_ext(od_img_plane *dst_p,
  int plane_width, int plane_height, int horz_padding, int vert_padding) {
-  ptrdiff_t dstride;
+  ptrdiff_t xstride;
+  ptrdiff_t ystride;
   unsigned char *dst_data;
   unsigned char *dst;
   int x;
   int y;
-  dstride = dst_p->ystride;
+  xstride = dst_p->xstride;
+  ystride = dst_p->ystride;
   dst_data = dst_p->data;
+  OD_ASSERT(horz_padding&1 == 0);
   /*Left side.*/
   for (y = 0; y < plane_height; y++) {
-    dst = dst_data + dstride*y;
-    for (x = 1; x <= horz_padding; x++) {
-      (dst - x)[0] = dst[0];
+    dst = dst_data + ystride*y;
+    if(xstride == 1){
+      for (x = 1; x <= horz_padding; x++) {
+        (dst - x)[0] = dst[0];
+      }
+    }else{
+      for (x = 1; x <= horz_padding; x++) {
+        (dst - (x << 1))[0] = dst[0];
+        (dst - (x << 1))[1] = dst[1];
+      }
     }
   }
   /*Right side.*/
   for (y = 0; y < plane_height; y++) {
-    dst = dst_data + plane_width - 1 + dstride*y;
-    for (x = 1; x <= horz_padding; x++) {
-      dst[x] = dst[0];
+    dst = dst_data + ystride*y + xstride*(plane_width - 1);
+    if(xstride == 1){
+      for (x = 1; x <= horz_padding; x++) {
+        dst[x] = dst[0];
+      }
+    }else{
+      for (x = 1; x <= horz_padding; x++) {
+        (dst + (x << 1))[0] = dst[0];
+        (dst + (x << 1))[1] = dst[1];
+      }
     }
   }
   /*Top.*/
-  dst = dst_data - horz_padding;
+  dst = dst_data - horz_padding*xstride;
   for (y = 0; y < vert_padding; y++) {
-    for (x = 0; x < plane_width + 2*horz_padding; x++) {
-      (dst - dstride)[x] = dst[x];
+    for (x = 0; x < (plane_width + 2*horz_padding)*xstride; x++) {
+      (dst - ystride)[x] = dst[x];
     }
-    dst -= dstride;
+    dst -= ystride;
   }
   /*Bottom.*/
-  dst = dst_data - horz_padding + plane_height*dstride;
+  dst = dst_data - horz_padding*xstride + plane_height*ystride;
   for (y = 0; y < vert_padding; y++) {
-    for (x = 0; x < plane_width + 2*horz_padding; x++) {
-      dst[x] = (dst - dstride)[x];
+    for (x = 0; x < (plane_width + 2*horz_padding)*xstride; x++) {
+      dst[x] = (dst - ystride)[x];
     }
-    dst += dstride;
+    dst += ystride;
   }
 }
 
@@ -905,8 +1057,101 @@ void od_img_edge_ext(od_img* src) {
     int ydec;
     xdec = (src->planes + pli)->xdec;
     ydec = (src->planes + pli)->ydec;
-    od_img_plane_edge_ext8(&src->planes[pli],
+    od_img_plane_edge_ext(&src->planes[pli],
      src->width >> xdec, src->height >> ydec,
      OD_UMV_PADDING >> xdec, OD_UMV_PADDING >> ydec);
+  }
+}
+
+void od_img_plane_to_coeff(od_coeff *dst, int no_coeff_shift,
+ od_img *src, int pli){
+  od_img_plane *iplane;
+  int bits;
+  int xdec;
+  int ydec;
+  int h;
+  int w;
+  int x;
+  int y;
+  int src_xstride;
+  int src_ystride;
+  int coeff_depth;
+  int coeff_shift;
+  unsigned char *src_data;
+  iplane = src->planes + pli;
+  bits = iplane->bitdepth;
+  xdec = iplane->xdec;
+  ydec = iplane->ydec;
+  w = src->width >> xdec;
+  h = src->height >> ydec;
+  src_xstride = iplane->xstride;
+  src_ystride = iplane->ystride;
+  src_data = iplane->data;
+  coeff_depth = no_coeff_shift ? bits : 8+OD_COEFF_SHIFT;
+  coeff_shift = coeff_depth - bits;
+  if (src_xstride == 1) {
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        dst[y*w + x] = *(src_data + src_ystride*y + x) - 128 << coeff_shift;
+      }
+    }
+  }
+  else{
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        dst[y*w + x] = *(uint16_t *)(src_data + src_ystride*y + x*src_xstride)
+         - (1 << bits >> 1) << coeff_shift;
+      }
+    }
+  }
+}
+
+void od_coeff_to_img_plane(od_img *dst, int pli,
+ od_coeff *src, int no_coeff_shift){
+  od_img_plane *iplane;
+  int bits;
+  int xdec;
+  int ydec;
+  int h;
+  int w;
+  int x;
+  int y;
+  int dst_xstride;
+  int dst_ystride;
+  int coeff_depth;
+  int coeff_shift;
+  unsigned char *dst_data;
+  iplane = dst->planes + pli;
+  bits = iplane->bitdepth;
+  xdec = iplane->xdec;
+  ydec = iplane->ydec;
+  w = dst->width >> xdec;
+  h = dst->height >> ydec;
+  dst_xstride = iplane->xstride;
+  dst_ystride = iplane->ystride;
+  dst_data = iplane->data;
+  coeff_depth = no_coeff_shift ? bits : 8+OD_COEFF_SHIFT;
+  coeff_shift = coeff_depth - bits;
+  if (dst_xstride == 1) {
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        *(dst_data + x) =
+         OD_CLAMP255((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
+         + 128);
+      }
+      dst_data += dst_ystride;
+      src += w;
+    }
+  }
+  else{
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        ((uint16_t *)dst_data)[x] =
+         OD_CLAMPU16((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
+         + (1 << bits >> 1));
+      }
+      dst_data += dst_ystride;
+      src += w;
+    }
   }
 }

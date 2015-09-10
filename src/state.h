@@ -89,12 +89,17 @@ extern const int *const OD_VERT_SETUP_DY[4][4];
 
 /*The shared (encoder and decoder) functions that have accelerated variants.*/
 struct od_state_opt_vtbl{
-  void (*mc_predict1fmv8)(unsigned char *_dst, const unsigned char *_src,
+  void (*mc_predict1fmv)(unsigned char *_dst, const unsigned char *_src,
    int _systride, int32_t _mvx, int32_t _mvy,
    int _log_xblk_sz, int _log_yblk_sz);
-  void (*mc_blend_full8)(unsigned char *_dst, int _dystride,
+  void (*mc_blend_full)(unsigned char *_dst, int _dystride,
    const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
-  void (*mc_blend_full_split8)(unsigned char *_dst, int _dystride,
+  void (*mc_blend_multi)(unsigned char *_dst, int _dystride,
+   const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
+  void (*mc_blend_full_split)(unsigned char *_dst, int _dystride,
+   const unsigned char *_src[4], int _c, int _s,
+   int _log_xblk_sz, int _log_yblk_sz);
+  void (*mc_blend_multi_split)(unsigned char *_dst, int _dystride,
    const unsigned char *_src[4], int _c, int _s,
    int _log_xblk_sz, int _log_yblk_sz);
   void (*restore_fpu)(void);
@@ -152,17 +157,17 @@ struct od_adapt_ctx {
 struct od_state{
   od_adapt_ctx        adapt;
   daala_info          info;
-  OD_ALIGN16(unsigned char mc_buf[5][OD_MVBSIZE_MAX*OD_MVBSIZE_MAX]);
+  unsigned char      *mc_buf[5];
   od_state_opt_vtbl   opt_vtbl;
   uint32_t        cpu_flags;
   int32_t         frame_width;
   int32_t         frame_height;
-  /** Buffer for the 4 ref images. */
+  int             full_precision_references;
+  /** Buffer for the ref images. */
   int            ref_imgi[OD_FRAME_MAX+1];
   /** Pointers to the ref images so one can move them around without coping
       them. */
   od_img         ref_imgs[OD_FRAME_MAX+1];
-  unsigned char *ref_line_buf[8];
   unsigned char *ref_img_data;
   /** Increments by 1 for each frame. */
   int64_t         cur_time;
@@ -198,6 +203,11 @@ struct od_state{
   int                 dump_tags;
   od_yuv_dumpfile    *dump_files;
 # endif
+# if defined(OD_DUMP_IMAGES)
+#  if defined(OD_ANIMATE)
+  int                 ani_iter;
+#  endif
+# endif
   od_coeff *ctmp[OD_NPLANES_MAX];
   od_coeff *dtmp[OD_NPLANES_MAX];
   od_coeff *mctmp[OD_NPLANES_MAX];
@@ -213,33 +223,59 @@ void od_aligned_free(void *_ptr);
 int od_state_init(od_state *_state, const daala_info *_info);
 void od_state_clear(od_state *_state);
 
-void od_img_copy(od_img* dest, od_img* src);
+void od_img_plane_copy(od_img* dst, od_img* src, int pli);
+void od_img_copy(od_img* dst, od_img* src);
 void od_adapt_ctx_reset(od_adapt_ctx *state, int is_keyframe);
 void od_state_set_mv_res(od_state *state, int mv_res);
 void od_state_pred_block_from_setup(od_state *state, unsigned char *buf,
  int ystride, od_img *ref, int pli, int vx, int vy, int c, int s,
  int log_mvb_sz);
-void od_state_pred_block(od_state *state, unsigned char *buf, int ystride,
- od_img *ref, int pli, int vx, int vy, int log_mvb_sz);
+void od_state_pred_block(od_state *state, unsigned char *buf, int xstride,
+ int ystride, od_img *ref, int pli, int vx, int vy, int log_mvb_sz);
 void od_state_mc_predict(od_state *state, od_img *img_dst, od_img *img_src);
 void od_state_init_border(od_state *_state);
 int od_state_dump_yuv(od_state *_state, od_img *_img, const char *_tag);
 void od_img_edge_ext(od_img* src);
+void od_img_plane_to_coeff(od_coeff *dst, int noshiftp, od_img *src, int pli);
+void od_coeff_to_img_plane(od_img *dst, int pli, od_coeff *src, int noshiftp);
+
 # if defined(OD_DUMP_IMAGES)
 int od_state_dump_img(od_state *_state, od_img *_img, const char *_tag);
 # endif
 
 /*Shared accelerated functions.*/
 
+void od_mc_predict1fmv(od_state *state, unsigned char *dst,
+ const unsigned char *src, int systride, int32_t mvx, int32_t mvy,
+ int log_xblk_sz, int log_yblk_sz);
+
 /*Default pure-C implementations.*/
-void od_mc_predict1fmv8_c(unsigned char *_dst, const unsigned char *_src,
- int _systride, int32_t _mvx, int32_t _mvy,
- int _log_xblk_sz, int _log_yblk_sz);
-void od_mc_blend_full8_c(unsigned char *_dst, int _dystride,
- const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
-void od_mc_blend_full_split8_c(unsigned char *_dst, int _dystride,
- const unsigned char *_src[4], int _c, int _s, int _log_xblk_sz,
- int _log_yblk_sz);
+void od_mc_predict1fmv8_c(unsigned char *dst, const unsigned char *src,
+ int systride, int32_t mvx, int32_t mvy,
+ int log_xblk_sz, int log_yblk_sz);
+void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
+ int systride, int32_t mvx, int32_t mvy,
+ int log_xblk_sz, int log_yblk_sz);
+void od_mc_blend_full8_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int log_xblk_sz, int log_yblk_sz);
+void od_mc_blend_full_split8_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int c, int s, int log_xblk_sz,
+ int log_yblk_sz);
+void od_mc_blend_multi8_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int log_xblk_sz, int log_yblk_sz);
+void od_mc_blend_multi_split8_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int c, int s, int log_xblk_sz,
+ int log_yblk_sz);
+void od_mc_blend_full16_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int log_xblk_sz, int log_yblk_sz);
+void od_mc_blend_full_split16_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int c, int s, int log_xblk_sz,
+ int log_yblk_sz);
+void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int log_xblk_sz, int log_yblk_sz);
+void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
+ const unsigned char *src[4], int c, int s, int log_xblk_sz,
+ int log_yblk_sz);
 void od_restore_fpu(od_state *state);
 
 void od_state_opt_vtbl_init_c(od_state *_state);

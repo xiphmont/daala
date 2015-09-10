@@ -175,6 +175,10 @@ int daala_decode_header_in(daala_info *info,
       tmpi = oggbyte_read1(&obb);
       if (tmpi < 0 || tmpi >= 32) return OD_EBADHEADER;
       info->keyframe_granule_shift = tmpi;
+      info->bitdepth = oggbyte_read1(&obb);
+      if ((info->bitdepth < 8) || (info->bitdepth > 12)) {
+        return OD_EBADHEADER;
+      }
       info->nplanes = oggbyte_read1(&obb);
       if ((info->nplanes < 1) || (info->nplanes > OD_NPLANES_MAX)) {
         return OD_EBADHEADER;
