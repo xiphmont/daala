@@ -212,6 +212,7 @@ void od_mc_predict1fmv8_c(unsigned char *dst, const unsigned char *src,
 void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
  int systride, int32_t mvx, int32_t mvy,
  int log_xblk_sz, int log_yblk_sz) {
+  int xstride;
   int mvxf;
   int mvyf;
   int xblk_sz;
@@ -225,8 +226,8 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
      2nd stage vertical filtering.*/
   int32_t *buff_p;
   /*A pointer to input row for both 1st and 2nd stage filtering*/
-  const uint16_t *src_p;
-  uint16_t *dst_p;
+  const unsigned char *src_p;
+  unsigned char *dst_p;
   /*1D filter chosen for the current fractional position of x mv.*/
   const int16_t *fx;
   const int16_t *fy;
@@ -240,12 +241,11 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
    *OD_MVBSIZE_MAX];
   int32_t sum;
   int k;
+  xstride = 2;
   xblk_sz = 1 << log_xblk_sz;
   yblk_sz = 1 << log_yblk_sz;
-  /*We're casting to and working with shorts, not chars */
-  systride >>= 1;
-  src_p = ((uint16_t *)src) + (mvx >> 3) + (mvy >> 3)*systride;
-  dst_p = (uint16_t *)dst;
+  src_p = src + (mvy >> 3)*systride + (mvx >> 3)*xstride;
+  dst_p = dst;
   /*Fetch LSB 3 bits, i.e. fractional MV.*/
   mvxf = mvx & 0x07;
   mvyf = mvy & 0x07;
@@ -272,7 +272,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           sum = 0;
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
-            sum += src_p[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
+            sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
           }
           buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE+OD_COEFF_SHIFT);
         }
@@ -287,8 +287,8 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           /* The cast is here to avoid undefined behavior from
              shifting a negative number */
-          buff_p[i] = (uint32_t)(src_p[i] - (128 << OD_COEFF_SHIFT))
-           << OD_SUBPEL_COEFF_SCALE;
+          buff_p[i] = (uint32_t)(((uint16_t *)src_p)[i]
+           - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE;
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -305,33 +305,33 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
             sum += buff_p[i + (k - OD_SUBPEL_TOP_APRON_SZ)*xblk_sz] * fy[k];
           }
-          dst_p[i] =
+          ((uint16_t *)dst_p)[i] =
            OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3 << OD_COEFF_SHIFT))
            >> OD_SUBPEL_COEFF_SCALE2);
         }
         buff_p += xblk_sz;
-        dst_p += xblk_sz;
+        dst_p += xblk_sz * xstride;
       }
     }
     /*The mvy is in integer position.*/
     else {
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          dst_p[i] =
+          ((uint16_t *)dst_p)[i] =
             OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4 << OD_COEFF_SHIFT))
            >> OD_SUBPEL_COEFF_SCALE);
         }
         buff_p += xblk_sz;
-        dst_p += xblk_sz;
+        dst_p += xblk_sz * xstride;
       }
     }
   }
   /*MC with full-pel MV, i.e. integer position.*/
   else {
     for (j = 0; j < yblk_sz; j++) {
-      OD_COPY(dst_p, src_p, xblk_sz);
+      OD_COPY(dst_p, src_p, xblk_sz*xstride);
       src_p += systride;
-      dst_p += xblk_sz;
+      dst_p += xblk_sz * xstride;
     }
   }
 }
@@ -1601,12 +1601,12 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
   for (k = 0; k < 4; k++) {
     int32_t lh[4][8];
     p = (uint16_t *)(src[k]);
-    q = (uint16_t *)(drc[k]);
+    q = drc[k];
     src_ll[k][0][0] = (p[0] + q[0] + 1) >> 1;
     for (i = 1; i < xblk_sz_2; i++) {
       i2 = i << 1;
-      src_ll[k][0][i] = (unsigned char)((p[i2 - 1] + q[i2 - 1]
-       + 2*(p[i2] + q[i2]) + p[i2 + 1] + q[i2 + 1] + 4) >> 3);
+      src_ll[k][0][i] = (p[i2 - 1] + q[i2 - 1]
+       + 2*(p[i2] + q[i2]) + p[i2 + 1] + q[i2 + 1] + 4) >> 3;
     }
     p += xblk_sz;
     q += xblk_sz;
@@ -1637,8 +1637,8 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
       p += xblk_sz;
       q += xblk_sz;
       for (i = 0; i < xblk_sz_2; i++) {
-        src_ll[k][j][i] = (unsigned char)(
-         (lh[(j2 - 1) & 3][i] + 2*lh[j2][i] + lh[j2 + 1][i] + 16) >> 5);
+        src_ll[k][j][i] =
+         (lh[(j2 - 1) & 3][i] + 2*lh[j2][i] + lh[j2 + 1][i] + 16) >> 5;
       }
     }
   }
