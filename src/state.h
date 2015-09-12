@@ -225,6 +225,7 @@ void od_state_clear(od_state *_state);
 
 void od_img_plane_copy(od_img* dst, od_img* src, int pli);
 void od_img_copy(od_img* dst, od_img* src);
+void od_img_truncate(od_img *img);
 void od_adapt_ctx_reset(od_adapt_ctx *state, int is_keyframe);
 void od_state_set_mv_res(od_state *state, int mv_res);
 void od_state_pred_block_from_setup(od_state *state, unsigned char *buf,

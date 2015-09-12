@@ -90,6 +90,34 @@ void od_aligned_free(void *_ptr) {
   }
 }
 
+/*Truncates the actual used bitdepth of an image to 8 significant bits.*/
+void od_img_truncate(od_img *img){
+  int x;
+  int y;
+  int pli;
+  int buf_width = img->width + (OD_UMV_PADDING << 1);
+  int buf_height = img->height + (OD_UMV_PADDING << 1);
+  for (pli=0; pli<img->nplanes; pli++) {
+    od_img_plane *iplane = img->planes+pli;
+    if(iplane->bitdepth > 8){
+      /* undo padding */
+      unsigned char *data = iplane->data
+       - (OD_UMV_PADDING >> iplane->xdec) * iplane->xstride
+       - (OD_UMV_PADDING >> iplane->ydec) * iplane->ystride;
+      int plane_width = buf_width >> iplane->xdec;
+      int plane_height = buf_height >> iplane->ydec;
+      int shift = iplane->bitdepth-8;
+      for(y=0; y<plane_height; y++){
+        for(x=0; x<plane_width; x++){
+          ((uint16_t *)data)[x] = ((uint16_t *)data)[x] + (1 << shift >> 1)
+             >> shift << shift;
+        }
+        data += iplane->ystride;
+      }
+    }
+  }
+}
+
 /*This is a smart copy that copies the intersection of the two img planes
    and performs any needed bitdepth conversion.
   Does not touch any padding/border/unintersected area.*/

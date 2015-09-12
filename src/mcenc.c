@@ -1370,7 +1370,7 @@ int od_mc_compute_sad16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride, int w, int h) {
   int i;
   int j;
-  int32_t ret;
+  uint32_t ret;
   ret = 0;
   for (j = 0; j < h; j++) {
     for (i = 0; i < w; i++) {

@@ -523,7 +523,8 @@ static void od_img_plane_copy_pad(od_img *dst,
           C = *(uint16_t *)dst_data;
           U = *(uint16_t *)(dst_data - (dst_ystride & -(y > 0)));
           D = *(uint16_t *)(dst_data + (dst_ystride & -(y + 1 < pic_height)));
-          ((uint16_t *)dst_data)[1] = (2*C + U + D + 2) >> 2;
+          /*((uint16_t *)dst_data)[1] = (2*C + U + D + 2) >> 2; XXX reinstate */
+          ((uint16_t *)dst_data)[1] = (2*C + U + D + 32) >> 6 << 4;
           dst_data += dst_ystride;
         }
       }
@@ -550,7 +551,8 @@ static void od_img_plane_copy_pad(od_img *dst,
           C = ((uint16_t *)(dst_data - dst_ystride))[x];
           L = ((uint16_t *)(dst_data - dst_ystride))[x - (x > 0)];
           R = ((uint16_t *)(dst_data - dst_ystride))[x + (x + 1 < plane_width)];
-          ((uint16_t *)dst_data)[x] = (2*C + L + R + 2) >> 2;
+          /*((uint16_t *)dst_data)[x] = (2*C + L + R + 2) >> 2; XXX reinstate */
+          ((uint16_t *)dst_data)[x] = (2*C + L + R + 32) >> 6 << 4;
         }
       }
       dst_data += dst_ystride;
@@ -1479,10 +1481,14 @@ static const unsigned char OD_YCbCr_BORDER[3] = {113, 72, 137};
 static const unsigned char OD_YCbCr_EDGE[3] = {41, 240, 110};
 static const unsigned char OD_YCbCr_MV[3] = {81, 90, 240};
 
-#define OD_TO_8(x) (siplane->bitdepth == 8 ? \
+/*#define OD_TO_8(x) (siplane->bitdepth == 8 ?                          \
   (x) : (((x) + (1<<siplane->bitdepth - 9)) >> (siplane->bitdepth - 8)))
 #define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
- src[(x)] : ((uint16_t *)src)[(x)])
+src[(x)] : ((uint16_t *)src)[(x)]) XX reinstate */
+#define OD_TO_8(x) (siplane->bitdepth == 8 ? \
+                    (x) : (x))
+#define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
+                      src[(x)] : ((((uint16_t *)src)[(x)]) + (1<<siplane->bitdepth - 9) >> (siplane->bitdepth - 8)))
 
 /*Upsamples the reconstructed image to a reference image.
   Currently used only for visualizations.*/
@@ -1907,9 +1913,12 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
   od_img_edge_ext(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
+  /* XXX remove below before flight */
+  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reconstructed frame.*/
   /*od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");*/
+  od_state_dump_img(&enc->state, enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF], "mc");
   od_encode_fill_vis(enc);
   od_state_dump_img(&enc->state, &enc->vis_img, "vis");
 #endif
@@ -2157,6 +2166,8 @@ static void od_encode_coefficients(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
       od_coeff_to_img_plane(state->ref_imgs + state->ref_imgi[OD_FRAME_SELF],
        pli, state->ctmp[pli], enc->quantizer[pli] == 0);
     }
+    /* XXX remove below before flight */
+    od_img_truncate(enc->state.ref_imgs+enc->state.ref_imgi[OD_FRAME_SELF]);
     od_state_dump_img(&enc->state,
      state->ref_imgs + state->ref_imgi[OD_FRAME_SELF], "lapped");
   }
@@ -2433,6 +2444,8 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   od_adapt_ctx_reset(&enc->state.adapt, mbctx.is_keyframe);
   if (!mbctx.is_keyframe) {
     od_predict_frame(enc);
+    /* XXX remove below before flight */
+    od_img_truncate(enc->state.ref_imgs+enc->state.ref_imgi[OD_FRAME_SELF]);
     od_encode_mvs(enc);
   }
   /* Enable block size RDO for all but complexity 0 and 1.
@@ -2449,6 +2462,8 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   }
   od_encode_coefficients(enc, &mbctx, OD_ENCODE_REAL);
   ref_img = enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF];
+  /* XXX remove below before flight */
+  od_img_truncate(ref_img);
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)
   /*Dump YUV*/
   od_state_dump_yuv(&enc->state, ref_img, "out");
@@ -2458,6 +2473,8 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
 #endif
   enc->packet_state = OD_PACKET_READY;
   od_img_edge_ext(ref_img);
+  /* XXX remove below before flight */
+  od_img_truncate(ref_img);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reference frame.*/
   /*od_state_dump_img(&enc->state,

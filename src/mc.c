@@ -272,9 +272,11 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           sum = 0;
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
-            sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
+            /*sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k]; XXX reinstate */
+            sum += (((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]>>4)*fx[k];
           }
-          buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE+OD_COEFF_SHIFT);
+          /* buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE+OD_COEFF_SHIFT);XXX reinstate */
+          buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE);
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -285,10 +287,10 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
       for (j = -OD_SUBPEL_TOP_APRON_SZ;
        j < yblk_sz + OD_SUBPEL_BOTTOM_APRON_SZ; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          /* The cast is here to avoid undefined behavior from
-             shifting a negative number */
-          buff_p[i] = (uint32_t)(((uint16_t *)src_p)[i]
-           - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE;
+          /*buff_p[i] = (((uint16_t *)src_p)[i]
+            - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE; XXX reinstate */
+          buff_p[i] = ((((uint16_t *)src_p)[i]>>4)
+           - (128)) << OD_SUBPEL_COEFF_SCALE;
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -305,9 +307,12 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
             sum += buff_p[i + (k - OD_SUBPEL_TOP_APRON_SZ)*xblk_sz] * fy[k];
           }
-          ((uint16_t *)dst_p)[i] =
+          /*((uint16_t *)dst_p)[i] =
            OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3 << OD_COEFF_SHIFT))
-           >> OD_SUBPEL_COEFF_SCALE2);
+           >> OD_SUBPEL_COEFF_SCALE2); XXX reinstate */
+          ((uint16_t *)dst_p)[i] =
+           OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3))
+           >> OD_SUBPEL_COEFF_SCALE2 << 4);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -317,9 +322,12 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
     else {
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          ((uint16_t *)dst_p)[i] =
+          /*((uint16_t *)dst_p)[i] =
             OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4 << OD_COEFF_SHIFT))
-           >> OD_SUBPEL_COEFF_SCALE);
+            >> OD_SUBPEL_COEFF_SCALE); XXX reinstate */
+          ((uint16_t *)dst_p)[i] =
+            OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4))
+           >> OD_SUBPEL_COEFF_SCALE << 4);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -387,12 +395,19 @@ void od_mc_blend_full16_c(unsigned char *dst, int dystride,
     for (i = 0; i < xblk_sz; i++) {
       int32_t a;
       int32_t b;
-      a = ((uint16_t *)(src[0]))[j*xblk_sz + i];
+      /*a = ((uint16_t *)(src[0]))[j*xblk_sz + i];
       b = ((uint16_t *)(src[3]))[j*xblk_sz + i];
       a = (a << log_xblk_sz) + (((uint16_t *)(src[1]))[j*xblk_sz + i] - a)*i;
       b = (b << log_xblk_sz) + (((uint16_t *)(src[2]))[j*xblk_sz + i] - b)*i;
       ((uint16_t *)dst)[i] =
-       OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2);
+      OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2); XXX reinstate */
+
+      a = ((uint16_t *)(src[0]))[j*xblk_sz + i]>>4;
+      b = ((uint16_t *)(src[3]))[j*xblk_sz + i]>>4;
+      a = (a << log_xblk_sz) + ((((uint16_t *)(src[1]))[j*xblk_sz + i]>>4) - a)*i;
+      b = (b << log_xblk_sz) + ((((uint16_t *)(src[2]))[j*xblk_sz + i]>>4) - b)*i;
+      ((uint16_t *)dst)[i] =
+       OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2 << 4);
     }
     dst += dystride;
   }
@@ -1174,12 +1189,18 @@ void od_mc_blend_full_split16_c(unsigned char *dst, int dystride,
       int32_t b;
       int32_t c;
       int32_t d;
-      a = ((uint16_t *)src[0])[j*xblk_sz + i];
+      /*a = ((uint16_t *)src[0])[j*xblk_sz + i];
       b = (((uint16_t *)src[1])[j*xblk_sz + i] - a)*sw[1];
       c = (((uint16_t *)src[2])[j*xblk_sz + i] - a)*sw[2];
       d = (((uint16_t *)src[3])[j*xblk_sz + i] - a)*sw[3];
       ((uint16_t *)dst)[i] = OD_CLAMPU16(((a << log_blk_sz2p1)
-       + b + c + d + round) >> log_blk_sz2p1);
+      + b + c + d + round) >> log_blk_sz2p1); XXX reinstate */
+      a = ((uint16_t *)src[0])[j*xblk_sz + i]>>4;
+      b = ((((uint16_t *)src[1])[j*xblk_sz + i]>>4) - a)*sw[1];
+      c = ((((uint16_t *)src[2])[j*xblk_sz + i]>>4) - a)*sw[2];
+      d = ((((uint16_t *)src[3])[j*xblk_sz + i]>>4) - a)*sw[3];
+      ((uint16_t *)dst)[i] = OD_CLAMPU16(((a << log_blk_sz2p1)
+       + b + c + d + round) >> log_blk_sz2p1 <<4);
       /*LOOP VECTORIZES.*/
       for (k = 0; k < 4; k++) sw[k] += dsdi[k];
     }
