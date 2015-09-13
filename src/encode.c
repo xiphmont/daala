@@ -1913,8 +1913,6 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
   od_img_edge_ext(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
-  /* XXX remove below before flight */
-  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reconstructed frame.*/
   /*od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");*/
