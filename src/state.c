@@ -1272,9 +1272,7 @@ void od_coeff_to_img_plane(od_img *dst, int pli,
   else{
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
-        ((uint16_t *)dst_data)[x] =
-         OD_CLAMPU16((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
-         + (1 << bits >> 1));
+        ((uint16_t *)dst_data)[x] = src[x] + 2048;
       }
       dst_data += dst_ystride;
       src += w;
