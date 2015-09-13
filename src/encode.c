@@ -2174,8 +2174,6 @@ static void od_encode_coefficients(daala_enc_ctx *enc, od_mb_enc_ctx *mbctx,
       od_coeff_to_img_plane(state->ref_imgs + state->ref_imgi[OD_FRAME_SELF],
        pli, state->ctmp[pli], enc->quantizer[pli] == 0);
     }
-    /* XXX remove below before flight */
-    od_img_truncate(enc->state.ref_imgs+enc->state.ref_imgi[OD_FRAME_SELF]);
     od_state_dump_img(&enc->state,
      state->ref_imgs + state->ref_imgi[OD_FRAME_SELF], "lapped");
   }
@@ -2452,8 +2450,6 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
   od_adapt_ctx_reset(&enc->state.adapt, mbctx.is_keyframe);
   if (!mbctx.is_keyframe) {
     od_predict_frame(enc);
-    /* XXX remove below before flight */
-    od_img_truncate(enc->state.ref_imgs+enc->state.ref_imgi[OD_FRAME_SELF]);
     od_encode_mvs(enc);
   }
   /* Enable block size RDO for all but complexity 0 and 1.
@@ -2469,8 +2465,6 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
     od_split_superblocks(enc, mbctx.is_keyframe);
   }
   ref_img = enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF];
-  /* XXX remove below before flight */
-  od_img_truncate(ref_img);
   od_encode_coefficients(enc, &mbctx, OD_ENCODE_REAL);
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)
   /*Dump YUV*/
@@ -2481,8 +2475,6 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration) {
 #endif
   enc->packet_state = OD_PACKET_READY;
   od_img_edge_ext(ref_img);
-  /* XXX remove below before flight */
-  od_img_truncate(ref_img);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reference frame.*/
   /*od_state_dump_img(&enc->state,
