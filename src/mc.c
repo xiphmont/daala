@@ -311,8 +311,8 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
            OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3 << OD_COEFF_SHIFT))
            >> OD_SUBPEL_COEFF_SCALE2); XXX reinstate */
           ((uint16_t *)dst_p)[i] =
-           OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3))
-           >> OD_SUBPEL_COEFF_SCALE2 << 4);
+           OD_CLAMP255((sum + (OD_SUBPEL_RND_OFFSET3))
+                       >> OD_SUBPEL_COEFF_SCALE2) << 4;
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -326,8 +326,8 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
             OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4 << OD_COEFF_SHIFT))
             >> OD_SUBPEL_COEFF_SCALE); XXX reinstate */
           ((uint16_t *)dst_p)[i] =
-            OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4))
-           >> OD_SUBPEL_COEFF_SCALE << 4);
+            OD_CLAMP255((buff_p[i] + (OD_SUBPEL_RND_OFFSET4))
+                        >> OD_SUBPEL_COEFF_SCALE) << 4;
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -407,7 +407,7 @@ void od_mc_blend_full16_c(unsigned char *dst, int dystride,
       a = (a << log_xblk_sz) + ((((uint16_t *)(src[1]))[j*xblk_sz + i]>>4) - a)*i;
       b = (b << log_xblk_sz) + ((((uint16_t *)(src[2]))[j*xblk_sz + i]>>4) - b)*i;
       ((uint16_t *)dst)[i] =
-       OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2 << 4);
+        OD_CLAMP255(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2) << 4;
     }
     dst += dystride;
   }
@@ -1199,8 +1199,8 @@ void od_mc_blend_full_split16_c(unsigned char *dst, int dystride,
       b = ((((uint16_t *)src[1])[j*xblk_sz + i]>>4) - a)*sw[1];
       c = ((((uint16_t *)src[2])[j*xblk_sz + i]>>4) - a)*sw[2];
       d = ((((uint16_t *)src[3])[j*xblk_sz + i]>>4) - a)*sw[3];
-      ((uint16_t *)dst)[i] = OD_CLAMPU16(((a << log_blk_sz2p1)
-       + b + c + d + round) >> log_blk_sz2p1 <<4);
+      ((uint16_t *)dst)[i] = OD_CLAMP255(((a << log_blk_sz2p1)
+       + b + c + d + round) >> log_blk_sz2p1) << 4;
       /*LOOP VECTORIZES.*/
       for (k = 0; k < 4; k++) sw[k] += dsdi[k];
     }

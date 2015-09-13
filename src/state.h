@@ -242,6 +242,7 @@ void od_coeff_to_img_plane(od_img *dst, int pli, od_coeff *src, int noshiftp);
 
 # if defined(OD_DUMP_IMAGES)
 int od_state_dump_img(od_state *_state, od_img *_img, const char *_tag);
+int od_state_dump_coeffs(od_state *state, od_coeff *c[3], const char *tag);
 # endif
 
 /*Shared accelerated functions.*/

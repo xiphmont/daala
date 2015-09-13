@@ -186,7 +186,6 @@ tools_TARGETS = \
 	tools/block_size_analysis \
 	tools/to_monochrome \
 	tools/downsample \
-	tools/upsample \
 	tools/divu_const \
 	tools/trans \
 	tools/trans2d \

@@ -109,8 +109,7 @@ void od_img_truncate(od_img *img){
       int shift = iplane->bitdepth-8;
       for(y=0; y<plane_height; y++){
         for(x=0; x<plane_width; x++){
-          ((uint16_t *)data)[x] = ((uint16_t *)data)[x] + (1 << shift >> 1)
-             >> shift << shift;
+          ((uint16_t *)data)[x] = OD_CLAMP255(((uint16_t *)data)[x] + (1 << shift >> 1) >> shift) << shift;
         }
         data += iplane->ystride;
       }
@@ -929,6 +928,105 @@ int od_state_dump_img(od_state *state, od_img *img, const char *tag) {
   fclose(fp);
   return 0;
 }
+
+/*Dumps coeffs into a png.*/
+int od_state_dump_coeffs(od_state *state, od_coeff *c[3], const char *tag) {
+  png_structp png;
+  png_infop info;
+  png_bytep *data;
+  FILE *fp;
+  char fname[1024];
+  od_coeff *p_rows[3];
+  od_coeff *p[3];
+  int nplanes;
+  int pli;
+  int x;
+  int y;
+  int w;
+  int h;
+  char *suf="";
+  sprintf(fname, "%08i%s%s.png",
+   (int)daala_granule_basetime(state, state->cur_time), tag, suf);
+  fp = fopen(fname, "wb");
+  png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if (png == NULL) {
+    fclose(fp);
+    return OD_EFAULT;
+  }
+  info = png_create_info_struct(png);
+  if (info == NULL) {
+    png_destroy_write_struct(&png, NULL);
+    fclose(fp);
+    return OD_EFAULT;
+  }
+  if (setjmp(png_jmpbuf(png))) {
+    png_destroy_write_struct(&png, &info);
+    fclose(fp);
+    return OD_EFAULT;
+  }
+  w = state->frame_width;
+  h = state->frame_height;
+  data = (png_bytep *)od_malloc_2d(h, 6*w, sizeof(**data));
+  if (state->info.nplanes < 3) nplanes = 1;
+  else nplanes = 3;
+  for (pli = 0; pli < nplanes; pli++) p_rows[pli] = c[pli];
+  for (y = 0; y < h; y++) {
+    int mask;
+    /*LOOP VECTORIZES.*/
+    for (pli = 0; pli < nplanes; pli++) p[pli] = p_rows[pli];
+    for (x = 0; x < w; x++) {
+      float yval;
+      float cbval;
+      float crval;
+      unsigned rval;
+      unsigned gval;
+      unsigned bval;
+      /*This is intentionally slow and very accurate.*/
+      yval = (p[0][0]/(float)(1<<OD_COEFF_SHIFT)+128 - 16)*(1.0F/219);
+      if (nplanes >= 3) {
+        cbval = (p[1][0]/(float)(1<<OD_COEFF_SHIFT))*(2*(1 - 0.114F)/224);
+        crval = (p[2][0]/(float)(1<<OD_COEFF_SHIFT))*(2*(1 - 0.299F)/224);
+      }
+      else cbval = crval = 0;
+      rval = OD_CLAMPI(0, (int)(65535*(yval + crval) + 0.5F), 65535);
+      gval = OD_CLAMPI(0, (int)(65535*
+       (yval - cbval*(0.114F/0.587F) - crval*(0.299F/0.587F)) + 0.5F), 65535);
+      bval = OD_CLAMPI(0, (int)(65535*(yval + cbval) + 0.5F), 65535);
+      data[y][6*x + 0] = (unsigned char)(rval >> 8);
+      data[y][6*x + 1] = (unsigned char)(rval & 0xFF);
+      data[y][6*x + 2] = (unsigned char)(gval >> 8);
+      data[y][6*x + 3] = (unsigned char)(gval & 0xFF);
+      data[y][6*x + 4] = (unsigned char)(bval >> 8);
+      data[y][6*x + 5] = (unsigned char)(bval & 0xFF);
+      for (pli = 0; pli < nplanes; pli++) {
+        mask = (1 << state->info.plane_info[pli].xdec) - 1;
+        p[pli] += ((x & mask) == mask);
+      }
+    }
+    for (pli = 0; pli < nplanes; pli++) {
+      mask = (1 << state->info.plane_info[pli].ydec) - 1;
+      p_rows[pli] += ((y & mask) == mask)*(w>>state->info.plane_info[pli].xdec);
+    }
+  }
+  png_init_io(png, fp);
+  png_set_compression_level(png, Z_DEFAULT_COMPRESSION);
+  png_set_IHDR(png, info, w, h, 16, PNG_COLOR_TYPE_RGB,
+   PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+  /*TODO: Define real colorspace.*/
+  /*png_set_gAMA(png, info, 2.2);
+  png_set_cHRM_fixed(png, info, 31006, 31616, 67000, 32000,
+   21000, 71000, 14000, 8000);*/
+  png_set_pHYs(png, info, state->info.pixel_aspect_numerator,
+   state->info.pixel_aspect_denominator, 0);
+  png_set_rows(png, info, data);
+  png_write_png(png, info, PNG_TRANSFORM_IDENTITY, NULL);
+  png_write_end(png, info);
+  png_destroy_write_struct(&png, &info);
+  od_free_2d(data);
+  fclose(fp);
+  return 0;
+}
+
 #endif
 
 void od_state_mc_predict(od_state *state, od_img *img_dst, od_img *img_src) {
@@ -1174,9 +1272,11 @@ void od_coeff_to_img_plane(od_img *dst, int pli,
   else{
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
-        ((uint16_t *)dst_data)[x] =
+        /*((uint16_t *)dst_data)[x] =
          OD_CLAMPU16((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
-         + (1 << bits >> 1));
+         + (1 << bits >> 1)); XXX reinstate */
+        ((uint16_t *)dst_data)[x] =
+          OD_CLAMP255((src[x] + (1 << 4 >> 1) >> 4)+128) << 4;
       }
       dst_data += dst_ystride;
       src += w;
