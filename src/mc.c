@@ -309,7 +309,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           }
           /*((uint16_t *)dst_p)[i] =
            OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3 << OD_COEFF_SHIFT))
-           >> OD_SUBPEL_COEFF_SCALE2); XXX reinstate */
+           >> OD_SUBPEL_COEFF_SCALE2); XXX aha! wrong! offset should be shifted, but rounding should not! */
           ((uint16_t *)dst_p)[i] =
            OD_CLAMP255((sum + (OD_SUBPEL_RND_OFFSET3))
                        >> OD_SUBPEL_COEFF_SCALE2) << 4;
@@ -324,7 +324,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           /*((uint16_t *)dst_p)[i] =
             OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4 << OD_COEFF_SHIFT))
-            >> OD_SUBPEL_COEFF_SCALE); XXX reinstate */
+            >> OD_SUBPEL_COEFF_SCALE); XXX aha! wrong! offset should be shifted, but rounding should not! */
           ((uint16_t *)dst_p)[i] =
             OD_CLAMP255((buff_p[i] + (OD_SUBPEL_RND_OFFSET4))
                         >> OD_SUBPEL_COEFF_SCALE) << 4;
