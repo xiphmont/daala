@@ -272,11 +272,9 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           sum = 0;
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
-            /*sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k]; XXX reinstate */
-            sum += (((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]>>4)*fx[k];
+            sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
           }
-          /* buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE+OD_COEFF_SHIFT);XXX reinstate */
-          buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE);
+          buff_p[i] = sum - (128 << OD_COEFF_SHIFT + OD_SUBPEL_COEFF_SCALE);
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -287,10 +285,8 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
       for (j = -OD_SUBPEL_TOP_APRON_SZ;
        j < yblk_sz + OD_SUBPEL_BOTTOM_APRON_SZ; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          /*buff_p[i] = (((uint16_t *)src_p)[i]
-            - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE; XXX reinstate */
-          buff_p[i] = ((((uint16_t *)src_p)[i]>>4)
-           - (128)) << OD_SUBPEL_COEFF_SCALE;
+          buff_p[i] = (((uint16_t *)src_p)[i]
+           - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE;
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -307,12 +303,9 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
             sum += buff_p[i + (k - OD_SUBPEL_TOP_APRON_SZ)*xblk_sz] * fy[k];
           }
-          /*((uint16_t *)dst_p)[i] =
-           OD_CLAMPU16((sum + (OD_SUBPEL_RND_OFFSET3 << OD_COEFF_SHIFT))
-           >> OD_SUBPEL_COEFF_SCALE2); XXX aha! wrong! offset should be shifted, but rounding should not! */
-          ((uint16_t *)dst_p)[i] =
-           OD_CLAMP255((sum + (OD_SUBPEL_RND_OFFSET3))
-                       >> OD_SUBPEL_COEFF_SCALE2) << 4;
+          ((uint16_t *)dst_p)[i] = OD_CLAMPU16((sum
+           + (1 << OD_SUBPEL_COEFF_SCALE2 >> 1) >> OD_SUBPEL_COEFF_SCALE2)
+           + (128 << OD_COEFF_SHIFT));
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -322,12 +315,9 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
     else {
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          /*((uint16_t *)dst_p)[i] =
-            OD_CLAMPU16((buff_p[i] + (OD_SUBPEL_RND_OFFSET4 << OD_COEFF_SHIFT))
-            >> OD_SUBPEL_COEFF_SCALE); XXX aha! wrong! offset should be shifted, but rounding should not! */
-          ((uint16_t *)dst_p)[i] =
-            OD_CLAMP255((buff_p[i] + (OD_SUBPEL_RND_OFFSET4))
-                        >> OD_SUBPEL_COEFF_SCALE) << 4;
+          ((uint16_t *)dst_p)[i] = OD_CLAMPU16((buff_p[i]
+           + (1 << OD_SUBPEL_COEFF_SCALE >> 1) >> OD_SUBPEL_COEFF_SCALE)
+           + (128 << OD_COEFF_SHIFT));
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;

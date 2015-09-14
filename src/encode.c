@@ -1904,6 +1904,7 @@ static void od_predict_frame(daala_enc_ctx *enc) {
     flags during the motion search, so we waste far too many bits trying to
     predict unpredictable areas when lambda is too small.
    Hopefully when we fix that, we can remove the limit.*/
+  /* test: truncate the frame */
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((4000000 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 40));
@@ -1920,8 +1921,6 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_encode_fill_vis(enc);
   od_state_dump_img(&enc->state, &enc->vis_img, "vis");
 #endif
-  /* test: truncate the frame */
-  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 }
 
 /*Older non-RDO block-decision code that is only called at low
