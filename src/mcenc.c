@@ -1370,16 +1370,16 @@ int od_mc_compute_sad16_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride, int w, int h) {
   int i;
   int j;
-  uint32_t ret;
+  int32_t ret;
   ret = 0;
   for (j = 0; j < h; j++) {
     for (i = 0; i < w; i++) {
-      ret += abs((((uint16_t *)ref)[i]>>4) - (((uint16_t *)src)[i]>>4));
+      ret += abs(((uint16_t *)ref)[i] - ((uint16_t *)src)[i]);
     }
     src += systride;
     ref += dystride;
   }
-  return ret;
+  return ret >> OD_COEFF_SHIFT;
 }
 
 int od_mc_compute_sad16_4x4_c(const unsigned char *src, int systride,
@@ -1630,7 +1630,7 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   int blk_size = 1 << log_blk_sz;
   for (y = 0; y < blk_size; y++) {
     for (x = 0; x < blk_size; x++) {
-      diff[y*blk_size + x] = ((uint16_t *)src)[x] - ((uint16_t *)ref)[x];
+      diff[y*blk_size + x] = (((uint16_t *)src)[x]>>4) - (((uint16_t *)ref)[x]>>4);
     }
     src += systride;
     ref += dystride;
@@ -1643,7 +1643,7 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   }
   /* Normalize (for orthogonality) by block size, i.e. 2d transform gain. */
   /* Also normalize to an 8-bit video depth */
-  satd >>= log_blk_sz + OD_COEFF_SHIFT;
+  satd >>= log_blk_sz;
   return satd;
 }
 
