@@ -1630,7 +1630,7 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   int blk_size = 1 << log_blk_sz;
   for (y = 0; y < blk_size; y++) {
     for (x = 0; x < blk_size; x++) {
-      diff[y*blk_size + x] = (((uint16_t *)src)[x]>>4) - (((uint16_t *)ref)[x]>>4);
+      diff[y*blk_size + x] = ((uint16_t *)src)[x] - ((uint16_t *)ref)[x];
     }
     src += systride;
     ref += dystride;
@@ -1643,7 +1643,7 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   }
   /* Normalize (for orthogonality) by block size, i.e. 2d transform gain. */
   /* Also normalize to an 8-bit video depth */
-  satd >>= log_blk_sz;
+  satd >>= log_blk_sz + OD_COEFF_SHIFT;
   return satd;
 }
 

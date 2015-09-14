@@ -105,7 +105,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
   This assumes a char is 8 bits.*/
 # define OD_CLAMP255(x) \
   ((unsigned char)((((x) < 0) - 1) & ((x) | -((x) > 255))))
-/*Clamps a signed integer between 0 and 32767, returning a uint16_t.*/
+/*Clamps a signed integer between 0 and 65535, returning a uint16_t.*/
 # define OD_CLAMPU16(x) \
   ((uint16_t)((((x) < 0) - 1) & ((x) | -((x) > 65535))))
 /*Divides a signed integer by a positive value with exact rounding.*/

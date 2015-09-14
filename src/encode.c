@@ -1920,6 +1920,8 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_encode_fill_vis(enc);
   od_state_dump_img(&enc->state, &enc->vis_img, "vis");
 #endif
+  /* test: truncate the frame */
+  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 }
 
 /*Older non-RDO block-decision code that is only called at low
