@@ -1374,7 +1374,7 @@ int od_mc_compute_sad16_c(const unsigned char *src, int systride,
   ret = 0;
   for (j = 0; j < h; j++) {
     for (i = 0; i < w; i++) {
-      ret += abs(((uint16_t *)ref)[i] - ((uint16_t *)src)[i]);
+      ret += abs(((int16_t *)ref)[i] - ((int16_t *)src)[i]);
     }
     src += systride;
     ref += dystride;
@@ -1630,7 +1630,7 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   int blk_size = 1 << log_blk_sz;
   for (y = 0; y < blk_size; y++) {
     for (x = 0; x < blk_size; x++) {
-      diff[y*blk_size + x] = ((uint16_t *)src)[x] - ((uint16_t *)ref)[x];
+      diff[y*blk_size + x] = ((int16_t *)src)[x] - ((int16_t *)ref)[x];
     }
     src += systride;
     ref += dystride;

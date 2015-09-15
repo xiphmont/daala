@@ -474,6 +474,104 @@ void od_encode_rollback(daala_enc_ctx *enc, const od_rollback_buffer *rbuf) {
   OD_COPY(&enc->state.adapt, &rbuf->adapt, 1);
 }
 
+/*This is a smart copy that copies the intersection of the two img planes
+   and performs any needed bitdepth and sign conversion.
+  Does not touch any padding/border/unintersected area.
+  Externally, all od_imgs are unsigned and centered according to bitdepth.
+  Internal od_imgs of > 8-bit depth such as references are signed. */
+static void od_img_plane_copy_in(od_img* dst, od_img* src, int pli) {
+  od_img_plane *dst_p;
+  od_img_plane *src_p;
+  unsigned char *dst_data;
+  unsigned char *src_data;
+  int dst_xstride;
+  int dst_ystride;
+  int src_xstride;
+  int src_ystride;
+  int dst_xdec;
+  int dst_ydec;
+  int src_xdec;
+  int src_ydec;
+  int dst_plane_width;
+  int dst_plane_height;
+  int src_plane_width;
+  int src_plane_height;
+  int w;
+  int h;
+  int x;
+  int y;
+  if (pli >= dst->nplanes || pli >= src->nplanes) {
+    return;
+  }
+  dst_p = dst->planes+pli;
+  src_p = src->planes+pli;
+  dst_xstride = dst_p->xstride;
+  dst_ystride = dst_p->ystride;
+  src_xstride = src_p->xstride;
+  src_ystride = src_p->ystride;
+  dst_xdec = dst_p->xdec;
+  dst_ydec = dst_p->ydec;
+  src_xdec = src_p->xdec;
+  src_ydec = src_p->ydec;
+  dst_data = dst_p->data;
+  src_data = src_p->data;
+  dst_plane_width = ((dst->width + (1 << dst_xdec) - 1) >> dst_xdec);
+  dst_plane_height = ((dst->height + (1 << dst_ydec) - 1) >> dst_ydec);
+  src_plane_width = ((src->width + (1 << src_xdec) - 1) >> src_xdec);
+  src_plane_height = ((src->height + (1 << src_ydec) - 1) >> src_ydec);
+  w = OD_MINI(dst_plane_width, src_plane_width);
+  h = OD_MINI(dst_plane_height, src_plane_height);
+  for (y = 0; y < h; y++) {
+    /*Be clever later.
+      Don't think too hard about collapsing all the cases yet.
+      For now we just want it to work, not be confusing, and not trip ubsan.*/
+    if (src_xstride == 1) {
+      if (dst_xstride == 1) {
+        OD_ASSERT(src_p->bitdepth == 8 && dst_p->bitdepth == 8);
+        OD_COPY(dst_data, src_data, w);
+      }
+      else {
+        int upshift = dst_p->bitdepth - src_p->bitdepth;
+        /*Destination is internal and so signed.*/
+        for (x = 0; x < w; x++) {
+          ((int16_t *)dst_data)[x] = src_data[x] - 128 << upshift;
+        }
+      }
+    }
+    else {
+      if (dst_xstride == 1){
+        int dnshift = src_p->bitdepth - dst_p->bitdepth;
+        /*Source is external and so unsigned.*/
+        for (x = 0; x < w; x++) {
+          dst_data[x] = OD_CLAMP255(((uint16_t *)src_data)[x]
+           + (1 << dnshift >> 1) >> dnshift);
+        }
+      }
+      else {
+        if (dst_p->bitdepth >= src_p->bitdepth) {
+          int upshift = dst_p->bitdepth - src_p->bitdepth;
+          for (x = 0; x < w; x++) {
+            ((int16_t *)dst_data)[x] =
+             OD_CLAMPS16(((uint16_t *)src_data)[x]
+             - (1 << src_p->bitdepth >> 1) << upshift);
+          }
+        }
+        else {
+          int dnshift = src_p->bitdepth - dst_p->bitdepth;
+          for (x = 0; x < w; x++) {
+            ((int16_t *)dst_data)[x] =
+             OD_CLAMPS16((((uint16_t *)src_data)[x]
+             + (1 << dnshift >> 1) >> dnshift)
+             - (1 << src_p->bitdepth-dnshift >> 1));
+          }
+        }
+      }
+    }
+    dst_data += dst_ystride;
+    src_data += src_ystride;
+  }
+}
+
 static void od_img_plane_copy_pad(od_img *dst,
  int plane_width, int plane_height, od_img *src,
  int pic_width, int pic_height, int pli) {
@@ -497,7 +595,7 @@ static void od_img_plane_copy_pad(od_img *dst,
   }
   else {
     /*Otherwise, Step 1: Copy the data we do have.*/
-    od_img_plane_copy(dst,0,src,1,pli);
+    od_img_plane_copy_in(dst,src,pli);
 
     /*Step 2: Perform a low-pass extension into the padding region.*/
     /*Right side.*/
@@ -517,14 +615,13 @@ static void od_img_plane_copy_pad(od_img *dst,
       }
       else {
         for (y = 0; y < pic_height; y++) {
-          uint16_t U;
-          uint16_t C;
-          uint16_t D;
-          C = *(uint16_t *)dst_data;
-          U = *(uint16_t *)(dst_data - (dst_ystride & -(y > 0)));
-          D = *(uint16_t *)(dst_data + (dst_ystride & -(y + 1 < pic_height)));
-          /*((uint16_t *)dst_data)[1] = (2*C + U + D + 2) >> 2; XXX reinstate */
-          ((uint16_t *)dst_data)[1] = (2*C + U + D + 32) >> 6 << 4;
+          int16_t U;
+          int16_t C;
+          int16_t D;
+          C = *(int16_t *)dst_data;
+          U = *(int16_t *)(dst_data - (dst_ystride & -(y > 0)));
+          D = *(int16_t *)(dst_data + (dst_ystride & -(y + 1 < pic_height)));
+          ((int16_t *)dst_data)[1] = (2*C + U + D + 2) >> 2;
           dst_data += dst_ystride;
         }
       }
@@ -545,14 +642,13 @@ static void od_img_plane_copy_pad(od_img *dst,
       }
       else{
         for (x = 0; x < plane_width; x++) {
-          uint16_t L;
-          uint16_t C;
-          uint16_t R;
-          C = ((uint16_t *)(dst_data - dst_ystride))[x];
-          L = ((uint16_t *)(dst_data - dst_ystride))[x - (x > 0)];
-          R = ((uint16_t *)(dst_data - dst_ystride))[x + (x + 1 < plane_width)];
-          /*((uint16_t *)dst_data)[x] = (2*C + L + R + 2) >> 2; XXX reinstate */
-          ((uint16_t *)dst_data)[x] = (2*C + L + R + 32) >> 6 << 4;
+          int16_t L;
+          int16_t C;
+          int16_t R;
+          C = ((int16_t *)(dst_data - dst_ystride))[x];
+          L = ((int16_t *)(dst_data - dst_ystride))[x - (x > 0)];
+          R = ((int16_t *)(dst_data - dst_ystride))[x + (x + 1 < plane_width)];
+          ((int16_t *)dst_data)[x] = (2*C + L + R + 2) >> 2;
         }
       }
       dst_data += dst_ystride;
@@ -1481,14 +1577,8 @@ static const unsigned char OD_YCbCr_BORDER[3] = {113, 72, 137};
 static const unsigned char OD_YCbCr_EDGE[3] = {41, 240, 110};
 static const unsigned char OD_YCbCr_MV[3] = {81, 90, 240};
 
-/*#define OD_TO_8(x) (siplane->bitdepth == 8 ?                          \
-  (x) : (((x) + (1<<siplane->bitdepth - 9)) >> (siplane->bitdepth - 8)))
 #define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
-src[(x)] : ((uint16_t *)src)[(x)]) XX reinstate */
-#define OD_TO_8(x) (siplane->bitdepth == 8 ? \
-  (x) : (x))
-#define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
-  src[(x)] : ((((uint16_t *)src)[(x)] - 32768 ) \
+  src[(x)] : (((int16_t *)src)[(x)] \
   + (1<<siplane->bitdepth - 9) >> (siplane->bitdepth - 8)) + 128)
 
 /*Upsamples the reconstructed image to a reference image.
@@ -1524,48 +1614,48 @@ static void od_img_upsample8(od_enc_ctx *enc,
       if (y < h + ypad) {
         unsigned char *buf;
         buf = enc->upsample_line_buf[y & 7];
-        memset(buf - (xpad << 1), OD_TO_8(OD_SRCVAL(0)), (xpad - 2) << 1);
-        *(buf - 4) = OD_TO_8(OD_SRCVAL(0));
-        *(buf - 3) = OD_CLAMP255(OD_TO_8((31*OD_SRCVAL(0)
-         + OD_SRCVAL(1) + 16) >> 5));
-        *(buf - 2) = OD_TO_8(OD_SRCVAL(0));
-        *(buf - 1) = OD_CLAMP255(OD_TO_8((36*OD_SRCVAL(0)
-         - 5*OD_SRCVAL(1) + OD_SRCVAL(1) + 16) >> 5));
-        buf[0] = OD_TO_8(OD_SRCVAL(0));
-        buf[1] = OD_CLAMP255(OD_TO_8((20*(OD_SRCVAL(0) + OD_SRCVAL(1))
+        memset(buf - (xpad << 1), OD_SRCVAL(0), (xpad - 2) << 1);
+        *(buf - 4) = OD_SRCVAL(0);
+        *(buf - 3) = OD_CLAMP255((31*OD_SRCVAL(0)
+         + OD_SRCVAL(1) + 16) >> 5);
+        *(buf - 2) = OD_SRCVAL(0);
+        *(buf - 1) = OD_CLAMP255((36*OD_SRCVAL(0)
+         - 5*OD_SRCVAL(1) + OD_SRCVAL(1) + 16) >> 5);
+        buf[0] = OD_SRCVAL(0);
+        buf[1] = OD_CLAMP255((20*(OD_SRCVAL(0) + OD_SRCVAL(1))
          - 5*(OD_SRCVAL(0) + OD_SRCVAL(2)) + OD_SRCVAL(0)
-         + OD_SRCVAL(3) + 16) >> 5));
-        buf[2] = OD_TO_8(OD_SRCVAL(1));
-        buf[3] = OD_CLAMP255(OD_TO_8((20*(OD_SRCVAL(1) + OD_SRCVAL(2))
+         + OD_SRCVAL(3) + 16) >> 5);
+        buf[2] = OD_SRCVAL(1);
+        buf[3] = OD_CLAMP255((20*(OD_SRCVAL(1) + OD_SRCVAL(2))
          - 5*(OD_SRCVAL(0) + OD_SRCVAL(3)) + OD_SRCVAL(0)
-         + OD_SRCVAL(4) + 16) >> 5));
+         + OD_SRCVAL(4) + 16) >> 5);
         for (x = 2; x < w - 3; x++) {
-          buf[x << 1] = OD_TO_8(OD_SRCVAL(x));
-          buf[x << 1 | 1] = OD_CLAMP255(OD_TO_8((20*(OD_SRCVAL(x)
+          buf[x << 1] = OD_SRCVAL(x);
+          buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x)
            + OD_SRCVAL(x + 1)) - 5*(OD_SRCVAL(x - 1)
            + OD_SRCVAL(x + 2)) + OD_SRCVAL(x - 2)
-           + OD_SRCVAL(x + 3) + 16) >> 5));
+           + OD_SRCVAL(x + 3) + 16) >> 5);
         }
-        buf[x << 1] = OD_TO_8(OD_SRCVAL(x));
-        buf[x << 1 | 1] = OD_CLAMP255(OD_TO_8((20*(OD_SRCVAL(x)
+        buf[x << 1] = OD_SRCVAL(x);
+        buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x)
          + OD_SRCVAL(x + 1)) - 5*(OD_SRCVAL(x - 1)
          + OD_SRCVAL(x + 2)) + OD_SRCVAL(x - 2)
-         + OD_SRCVAL(x + 2) + 16) >> 5));
+         + OD_SRCVAL(x + 2) + 16) >> 5);
         x++;
-        buf[x << 1] = OD_TO_8(OD_SRCVAL(x));
-        buf[x << 1 | 1] = OD_CLAMP255(OD_TO_8((20*(OD_SRCVAL(x)
+        buf[x << 1] = OD_SRCVAL(x);
+        buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x)
          + OD_SRCVAL(x + 1)) - 5*(OD_SRCVAL(x - 1)
          + OD_SRCVAL(x + 1)) + OD_SRCVAL(x - 2)
-         + OD_SRCVAL(x + 1) + 16) >> 5));
+         + OD_SRCVAL(x + 1) + 16) >> 5);
         x++;
-        buf[x << 1] = OD_TO_8(OD_SRCVAL(x));
-        buf[x << 1 | 1] = OD_CLAMP255(OD_TO_8((36*OD_SRCVAL(x)
-         - 5*OD_SRCVAL(x - 1) + OD_SRCVAL(x - 2) + 16) >> 5));
+        buf[x << 1] = OD_SRCVAL(x);
+        buf[x << 1 | 1] = OD_CLAMP255((36*OD_SRCVAL(x)
+         - 5*OD_SRCVAL(x - 1) + OD_SRCVAL(x - 2) + 16) >> 5);
         x++;
-        buf[x << 1] = OD_TO_8(OD_SRCVAL(w - 1));
-        buf[x << 1 | 1] = OD_CLAMP255(OD_TO_8((31*OD_SRCVAL(w - 1)
-         + OD_SRCVAL(w - 2) + 16) >> 5));
-        memset(buf + (++x << 1), OD_TO_8(OD_SRCVAL(w - 1)),
+        buf[x << 1] = OD_SRCVAL(w - 1);
+        buf[x << 1 | 1] = OD_CLAMP255((31*OD_SRCVAL(w - 1)
+         + OD_SRCVAL(w - 2) + 16) >> 5);
+        memset(buf + (++x << 1), OD_SRCVAL(w - 1),
          (xpad - 1) << 1);
         if (y >= 0 && y + 1 < h) src += siplane->ystride;
       }

@@ -111,8 +111,7 @@ struct daala_enc_ctx{
   od_coeff nosplit[OD_NBSIZES-1][OD_BSIZE_MAX*OD_BSIZE_MAX];
   od_coeff split[OD_NBSIZES-1][OD_BSIZE_MAX*OD_BSIZE_MAX];
   /* Buffer for the input frame, scaled to reference resolution.
-     Like references, a > 8 bit deep image is unsigned and centered
-      on 32768 regardless od bit depth. */
+     Like references, a > 8 bit deep image is signed */
   od_img input_img;
   unsigned char *input_img_data;
 # if defined(OD_DUMP_IMAGES)

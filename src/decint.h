@@ -52,8 +52,8 @@ struct daala_dec_ctx {
   /*Buffer for the output frame, bitdepth equal to declared video depth.
     This image is passed back and unlike the references is centered
      according to bit depth.
-    For example, a 10-bit deep images uses the 10 least significant bits of
-     the unsigned short, and is centered on 512.*/
+    For example, a 10-bit deep image is unsigned, uses the 10 least
+     significant bits of the unsigned short, and is centered on 512.*/
   od_img output_img;
   unsigned char *output_img_data;
 };
