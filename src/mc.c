@@ -274,7 +274,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
             sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
           }
-          buff_p[i] = sum - (128 << OD_COEFF_SHIFT + OD_SUBPEL_COEFF_SCALE);
+          buff_p[i] = sum - (128 << OD_SUBPEL_COEFF_SCALE + 8);
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -286,7 +286,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
        j < yblk_sz + OD_SUBPEL_BOTTOM_APRON_SZ; j++) {
         for (i = 0; i < xblk_sz; i++) {
           buff_p[i] = (((uint16_t *)src_p)[i]
-           - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE;
+           - 32768) << OD_SUBPEL_COEFF_SCALE;
         }
         src_p += systride;
         buff_p += xblk_sz;
@@ -305,7 +305,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           }
           ((uint16_t *)dst_p)[i] = OD_CLAMPU16((sum
            + (1 << OD_SUBPEL_COEFF_SCALE2 >> 1) >> OD_SUBPEL_COEFF_SCALE2)
-           + (128 << OD_COEFF_SHIFT));
+           + 32768);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -317,7 +317,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           ((uint16_t *)dst_p)[i] = OD_CLAMPU16((buff_p[i]
            + (1 << OD_SUBPEL_COEFF_SCALE >> 1) >> OD_SUBPEL_COEFF_SCALE)
-           + (128 << OD_COEFF_SHIFT));
+           + 32768);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;

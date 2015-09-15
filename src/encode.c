@@ -497,7 +497,7 @@ static void od_img_plane_copy_pad(od_img *dst,
   }
   else {
     /*Otherwise, Step 1: Copy the data we do have.*/
-    od_img_plane_copy(dst,src,pli);
+    od_img_plane_copy(dst,0,src,1,pli);
 
     /*Step 2: Perform a low-pass extension into the padding region.*/
     /*Right side.*/
@@ -1486,9 +1486,10 @@ static const unsigned char OD_YCbCr_MV[3] = {81, 90, 240};
 #define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
 src[(x)] : ((uint16_t *)src)[(x)]) XX reinstate */
 #define OD_TO_8(x) (siplane->bitdepth == 8 ? \
-                    (x) : (x))
+  (x) : (x))
 #define OD_SRCVAL(x) (siplane->bitdepth == 8 ? \
-                      src[(x)] : ((((uint16_t *)src)[(x)]) + (1<<siplane->bitdepth - 9) >> (siplane->bitdepth - 8)))
+  src[(x)] : ((((uint16_t *)src)[(x)] - 32768 ) \
+  + (1<<siplane->bitdepth - 9) >> (siplane->bitdepth - 8)) + 128)
 
 /*Upsamples the reconstructed image to a reference image.
   Currently used only for visualizations.*/

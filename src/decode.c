@@ -969,8 +969,8 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
      dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF],
      dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_PREV]);
     if (dec->user_mc_img != NULL) {
-      od_img_copy(dec->user_mc_img,
-       dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF]);
+      od_img_copy(dec->user_mc_img,1,
+                  dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF],0);
     }
   }
   od_decode_coefficients(dec, &mbctx);
@@ -993,7 +993,7 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
 #endif
   od_img_edge_ext(ref_img);
   /*Return decoded frame.*/
-  od_img_copy(&dec->output_img, ref_img);
+  od_img_copy(&dec->output_img, 1, ref_img, 0);
   *img = dec->output_img;
   dec->state.cur_time++;
   return 0;

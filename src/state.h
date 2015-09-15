@@ -166,7 +166,11 @@ struct od_state{
   /** Buffer for the ref images. */
   int            ref_imgi[OD_FRAME_MAX+1];
   /** Pointers to the ref images so one can move them around without coping
-      them. */
+       them.
+      Unlike the images actually passed into or out of the codec, reference
+        bitdepths greater than 8 are always centered on 32768.
+      That is, a 12-bit reference still uses the lower 12 bits of the
+       unsigned short, but is still centered on 32768. */
   od_img         ref_imgs[OD_FRAME_MAX+1];
   unsigned char *ref_img_data;
   /** Increments by 1 for each frame. */
@@ -223,8 +227,10 @@ void od_aligned_free(void *_ptr);
 int od_state_init(od_state *_state, const daala_info *_info);
 void od_state_clear(od_state *_state);
 
-void od_img_plane_copy(od_img* dst, od_img* src, int pli);
-void od_img_copy(od_img* dst, od_img* src);
+void od_img_plane_copy(od_img* dst, int dstextp,
+ od_img* src, int srcextp,
+ int pli);
+void od_img_copy(od_img* dst, int dstextp, od_img* src, int srcextp);
 void od_img_truncate(od_img *img);
 void od_adapt_ctx_reset(od_adapt_ctx *state, int is_keyframe);
 void od_state_set_mv_res(od_state *state, int mv_res);
