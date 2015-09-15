@@ -1485,10 +1485,12 @@ void od_bilinear_smooth(od_coeff *x, int ln, int stride, int q, int pli) {
   for (i = 0; i < n; i++) {
     for (j = 0; j < n; j++) {
       y[i][j] = a00 + ((j*a01 + i*a10 + (j*i*a11 >> ln) + n/2) >> ln);
-      dist += (y[i][j] - x[i*stride + j])*(y[i][j] - x[i*stride + j]);
+      dist += (y[i][j] - x[i*stride + j])*(y[i][j] - x[i*stride + j])
+       >> 2*OD_COEFF_SHIFT;
     }
   }
-  dist >>= 2*ln;
+  if (ln > OD_COEFF_SHIFT) dist >>= 2*ln - 2*OD_COEFF_SHIFT;
+  else dist <<= 2*OD_COEFF_SHIFT - 2*ln;
   /* Compute 1 - Wiener filter gain = strength * (q^2/12) / dist. */
   w = OD_MINI(1024, OD_BILINEAR_STRENGTH[pli]*q*q/(1 + 12*dist));
   /* Square the theoretical gain to attenuate the effect when we're unsure
