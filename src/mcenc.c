@@ -1374,12 +1374,12 @@ int od_mc_compute_sad16_c(const unsigned char *src, int systride,
   ret = 0;
   for (j = 0; j < h; j++) {
     for (i = 0; i < w; i++) {
-      ret += abs(((int16_t *)ref)[i] - ((int16_t *)src)[i]);
+      ret += abs((((int16_t *)ref)[i]+8>>4) - (((int16_t *)src)[i]+8>>4));
     }
     src += systride;
     ref += dystride;
   }
-  return ret + (1 << OD_COEFF_SHIFT >> 1) >> OD_COEFF_SHIFT;
+  return ret;
 }
 
 int od_mc_compute_sad16_4x4_c(const unsigned char *src, int systride,
