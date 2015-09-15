@@ -385,19 +385,12 @@ void od_mc_blend_full16_c(unsigned char *dst, int dystride,
     for (i = 0; i < xblk_sz; i++) {
       int32_t a;
       int32_t b;
-      /*a = ((uint16_t *)(src[0]))[j*xblk_sz + i];
+      a = ((uint16_t *)(src[0]))[j*xblk_sz + i];
       b = ((uint16_t *)(src[3]))[j*xblk_sz + i];
       a = (a << log_xblk_sz) + (((uint16_t *)(src[1]))[j*xblk_sz + i] - a)*i;
       b = (b << log_xblk_sz) + (((uint16_t *)(src[2]))[j*xblk_sz + i] - b)*i;
       ((uint16_t *)dst)[i] =
-      OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2); XXX reinstate */
-
-      a = ((uint16_t *)(src[0]))[j*xblk_sz + i]>>4;
-      b = ((uint16_t *)(src[3]))[j*xblk_sz + i]>>4;
-      a = (a << log_xblk_sz) + ((((uint16_t *)(src[1]))[j*xblk_sz + i]>>4) - a)*i;
-      b = (b << log_xblk_sz) + ((((uint16_t *)(src[2]))[j*xblk_sz + i]>>4) - b)*i;
-      ((uint16_t *)dst)[i] =
-        OD_CLAMP255(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2) << 4;
+       OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2);
     }
     dst += dystride;
   }
@@ -1179,18 +1172,12 @@ void od_mc_blend_full_split16_c(unsigned char *dst, int dystride,
       int32_t b;
       int32_t c;
       int32_t d;
-      /*a = ((uint16_t *)src[0])[j*xblk_sz + i];
+      a = ((uint16_t *)src[0])[j*xblk_sz + i];
       b = (((uint16_t *)src[1])[j*xblk_sz + i] - a)*sw[1];
       c = (((uint16_t *)src[2])[j*xblk_sz + i] - a)*sw[2];
       d = (((uint16_t *)src[3])[j*xblk_sz + i] - a)*sw[3];
       ((uint16_t *)dst)[i] = OD_CLAMPU16(((a << log_blk_sz2p1)
-      + b + c + d + round) >> log_blk_sz2p1); XXX reinstate */
-      a = ((uint16_t *)src[0])[j*xblk_sz + i]>>4;
-      b = ((((uint16_t *)src[1])[j*xblk_sz + i]>>4) - a)*sw[1];
-      c = ((((uint16_t *)src[2])[j*xblk_sz + i]>>4) - a)*sw[2];
-      d = ((((uint16_t *)src[3])[j*xblk_sz + i]>>4) - a)*sw[3];
-      ((uint16_t *)dst)[i] = OD_CLAMP255(((a << log_blk_sz2p1)
-       + b + c + d + round) >> log_blk_sz2p1) << 4;
+       + b + c + d + round) >> log_blk_sz2p1);
       /*LOOP VECTORIZES.*/
       for (k = 0; k < 4; k++) sw[k] += dsdi[k];
     }

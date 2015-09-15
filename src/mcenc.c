@@ -1379,7 +1379,7 @@ int od_mc_compute_sad16_c(const unsigned char *src, int systride,
     src += systride;
     ref += dystride;
   }
-  return ret >> OD_COEFF_SHIFT;
+  return ret + (1 << OD_COEFF_SHIFT >> 1) >> OD_COEFF_SHIFT;
 }
 
 int od_mc_compute_sad16_4x4_c(const unsigned char *src, int systride,
@@ -1643,7 +1643,8 @@ static int od_mc_compute_satd16_c(const unsigned char *src,
   }
   /* Normalize (for orthogonality) by block size, i.e. 2d transform gain. */
   /* Also normalize to an 8-bit video depth */
-  satd >>= log_blk_sz + OD_COEFF_SHIFT;
+  satd = satd + (1 << log_blk_sz + OD_COEFF_SHIFT >> 1)
+   >> log_blk_sz + OD_COEFF_SHIFT;
   return satd;
 }
 
@@ -3578,7 +3579,7 @@ static void od_mv_est_calc_sads(od_mv_est_ctx *est, int ref) {
         for (vx = 0; vx < nhmvbs; vx++) {
           oc = (vx & 1) ^ ((vy & 1) << 1 | (vy & 1));
           for (s = 0; s < smax; s++) {
-            sad_cache_row[vx][s] = (uint16_t)od_mv_est_sad(est, ref,
+            sad_cache_row[vx][s] = od_mv_est_sad(est, ref,
              vx << log_mvb_sz, vy << log_mvb_sz, oc, s, log_mvb_sz);
           }
           /*While we're here, fill in the block's setup state.*/
