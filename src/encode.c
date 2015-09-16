@@ -1901,6 +1901,7 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((4000000 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 40));
+  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_PREV]);
   od_state_mc_predict(&enc->state,
    enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF],
    enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_PREV]);
