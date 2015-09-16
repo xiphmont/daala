@@ -360,7 +360,7 @@ static int od_state_init_impl(od_state *state, const daala_info *info) {
    ~(OD_BSIZE_MAX - 1);
   state->nhmvbs = state->frame_width >> OD_LOG_MVBSIZE_MIN;
   state->nvmvbs = state->frame_height >> OD_LOG_MVBSIZE_MIN;
-#if 0
+#if 1
   state->full_precision_references = 1;
 #else
   state->full_precision_references = info->bitdepth > 8;
@@ -808,7 +808,7 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
           value = *((int16_t *)(img->planes[pli].data + ystride*y + xstride*x))
            + (1 << img->planes[pli].bitdepth >> 9)
            >> (img->planes[pli].bitdepth - 8);
-          if(fputc(value, fp) == EOF){
+          if(fputc(CLAMP255(value), fp) == EOF){
             fprintf(stderr, "Error writing to \"%s\".\n", fname);
             return OD_EFAULT;
           }
