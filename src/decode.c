@@ -912,109 +912,6 @@ static void od_decode_coefficients(od_dec_ctx *dec, od_mb_dec_ctx *mbctx) {
   }
 }
 
-/*This is a smart copy that copies the intersection of the two img planes
-   and performs any needed bitdepth and sign conversion.
-  Does not touch any padding/border/unintersected area.
-  Externally, all od_imgs are unsigned and centered according to bitdepth.
-  Internal od_imgs of > 8-bit depth such as references are signed. */
-void od_img_copy_out(od_img* dst, od_img* src) {
-  int pli;
-  od_img_plane *dst_p;
-  od_img_plane *src_p;
-  unsigned char *dst_data;
-  unsigned char *src_data;
-  int dst_xstride;
-  int dst_ystride;
-  int src_xstride;
-  int src_ystride;
-  int dst_xdec;
-  int dst_ydec;
-  int src_xdec;
-  int src_ydec;
-  int dst_plane_width;
-  int dst_plane_height;
-  int src_plane_width;
-  int src_plane_height;
-  int w;
-  int h;
-  int x;
-  int y;
-  for (pli=0; pli<OD_MAXI(dst->nplanes, src->nplanes); pli++) {
-    if (pli >= dst->nplanes || pli >= src->nplanes) {
-      return;
-    }
-    dst_p = dst->planes+pli;
-    src_p = src->planes+pli;
-    dst_xstride = dst_p->xstride;
-    dst_ystride = dst_p->ystride;
-    src_xstride = src_p->xstride;
-    src_ystride = src_p->ystride;
-    dst_xdec = dst_p->xdec;
-    dst_ydec = dst_p->ydec;
-    src_xdec = src_p->xdec;
-    src_ydec = src_p->ydec;
-    dst_data = dst_p->data;
-    src_data = src_p->data;
-    dst_plane_width = ((dst->width + (1 << dst_xdec) - 1) >> dst_xdec);
-    dst_plane_height = ((dst->height + (1 << dst_ydec) - 1) >> dst_ydec);
-    src_plane_width = ((src->width + (1 << src_xdec) - 1) >> src_xdec);
-    src_plane_height = ((src->height + (1 << src_ydec) - 1) >> src_ydec);
-    w = OD_MINI(dst_plane_width, src_plane_width);
-    h = OD_MINI(dst_plane_height, src_plane_height);
-    for (y = 0; y < h; y++) {
-      /*Be clever later.
-        Don't think too hard about collapsing all the cases yet.
-        For now we just want it to work, not be confusing, and not trip
-         ubsan.*/
-      if (src_xstride == 1) {
-        if (dst_xstride == 1) {
-          OD_ASSERT(src_p->bitdepth == 8 && dst_p->bitdepth == 8);
-          OD_COPY(dst_data, src_data, w);
-        }
-        else {
-          int upshift = dst_p->bitdepth - src_p->bitdepth;
-          /*Destination is externally exposed and so unsigned.*/
-          for (x = 0; x < w; x++) {
-            ((uint16_t *)dst_data)[x] = src_data[x] << upshift;
-          }
-        }
-      }
-      else {
-        if (dst_xstride == 1){
-          int dnshift = src_p->bitdepth - dst_p->bitdepth;
-          /*Source is internal and so signed.*/
-          for (x = 0; x < w; x++) {
-            dst_data[x] = OD_CLAMP255(((int16_t *)src_data)[x]
-             + (1 << src_p->bitdepth >> 1)
-             + (1 << dnshift >> 1) >> dnshift);
-          }
-        }
-        else {
-          if (dst_p->bitdepth >= src_p->bitdepth) {
-            int upshift = dst_p->bitdepth - src_p->bitdepth;
-            for (x = 0; x < w; x++) {
-              ((uint16_t *)dst_data)[x] =
-               OD_CLAMPU16(((int16_t *)src_data)[x]
-               + (1 << src_p->bitdepth >> 1) << upshift);
-            }
-          }
-          else {
-            int dnshift = src_p->bitdepth - dst_p->bitdepth;
-            for (x = 0; x < w; x++) {
-              ((uint16_t *)dst_data)[x] =
-               OD_CLAMPU16(((int16_t *)src_data)[x]
-               + (1 << src_p->bitdepth >> 1)
-               + (1 << dnshift >> 1) >> dnshift);
-            }
-          }
-        }
-      }
-      dst_data += dst_ystride;
-      src_data += src_ystride;
-    }
-  }
-}
-
 int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
  const ogg_packet *op) {
   int refi;
@@ -1072,8 +969,8 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
      dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF],
      dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_PREV]);
     if (dec->user_mc_img != NULL) {
-      od_img_copy_out(dec->user_mc_img,
-                  dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF]);
+      od_img_copy(dec->user_mc_img,1,
+                  dec->state.ref_imgs + dec->state.ref_imgi[OD_FRAME_SELF],0);
     }
   }
   od_decode_coefficients(dec, &mbctx);
@@ -1096,7 +993,7 @@ int daala_decode_packet_in(daala_dec_ctx *dec, od_img *img,
 #endif
   od_img_edge_ext(ref_img);
   /*Return decoded frame.*/
-  od_img_copy_out(&dec->output_img, ref_img);
+  od_img_copy(&dec->output_img, 1, ref_img, 0);
   *img = dec->output_img;
   dec->state.cur_time++;
   return 0;
