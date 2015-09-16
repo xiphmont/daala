@@ -808,7 +808,7 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
           value = *((int16_t *)(img->planes[pli].data + ystride*y + xstride*x))
            + (1 << img->planes[pli].bitdepth >> 9)
            >> (img->planes[pli].bitdepth - 8);
-          if(fputc(CLAMP255(value), fp) == EOF){
+          if(fputc(OD_CLAMP255(value), fp) == EOF){
             fprintf(stderr, "Error writing to \"%s\".\n", fname);
             return OD_EFAULT;
           }
