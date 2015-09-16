@@ -163,7 +163,7 @@ struct od_img_plane {
   int ystride;
   /** 8 for 'normal' video precision; data is unsigned bytes centered on 128.
       >8 indicates high-depth video; data is unnormalized host-endian order
-       unsigned 16-bit shorts (two octets).
+       unsigned signed 16-bit shorts (two octets).
       For example, 10 bit video would declare a bit depth of 10, use the
       lower 10 bits of each 16 bit short, and center on 512. */
   int bitdepth;
