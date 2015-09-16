@@ -166,7 +166,10 @@ struct od_state{
   /** Buffer for the ref images. */
   int            ref_imgi[OD_FRAME_MAX+1];
   /** Pointers to the ref images so one can move them around without coping
-      them. */
+       them.
+      Unlike externally exposed od_imgs, references are handled as
+       signed entities and not clamped to the range suggested by the
+       declared bitdepth.*/
   od_img         ref_imgs[OD_FRAME_MAX+1];
   unsigned char *ref_img_data;
   /** Increments by 1 for each frame. */

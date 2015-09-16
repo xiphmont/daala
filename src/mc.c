@@ -272,7 +272,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
         for (i = 0; i < xblk_sz; i++) {
           sum = 0;
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
-            sum += ((uint16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
+            sum += ((int16_t *)src_p)[i + k - OD_SUBPEL_TOP_APRON_SZ]*fx[k];
           }
           buff_p[i] = sum - (128 << OD_COEFF_SHIFT + OD_SUBPEL_COEFF_SCALE);
         }
@@ -285,7 +285,7 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
       for (j = -OD_SUBPEL_TOP_APRON_SZ;
        j < yblk_sz + OD_SUBPEL_BOTTOM_APRON_SZ; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          buff_p[i] = (((uint16_t *)src_p)[i]
+          buff_p[i] = (((int16_t *)src_p)[i]
            - (128 << OD_COEFF_SHIFT)) << OD_SUBPEL_COEFF_SCALE;
         }
         src_p += systride;
@@ -303,9 +303,9 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
           for (k = 0; k < OD_SUBPEL_FILTER_TAP_SIZE; k++) {
             sum += buff_p[i + (k - OD_SUBPEL_TOP_APRON_SZ)*xblk_sz] * fy[k];
           }
-          ((uint16_t *)dst_p)[i] = OD_CLAMPU16((sum
+          ((int16_t *)dst_p)[i] = (sum
            + (1 << OD_SUBPEL_COEFF_SCALE2 >> 1) >> OD_SUBPEL_COEFF_SCALE2)
-           + (128 << OD_COEFF_SHIFT));
+           + (128 << OD_COEFF_SHIFT);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -315,9 +315,9 @@ void od_mc_predict1fmv16_c(unsigned char *dst, const unsigned char *src,
     else {
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
-          ((uint16_t *)dst_p)[i] = OD_CLAMPU16((buff_p[i]
+          ((int16_t *)dst_p)[i] = (buff_p[i]
            + (1 << OD_SUBPEL_COEFF_SCALE >> 1) >> OD_SUBPEL_COEFF_SCALE)
-           + (128 << OD_COEFF_SHIFT));
+           + (128 << OD_COEFF_SHIFT);
         }
         buff_p += xblk_sz;
         dst_p += xblk_sz * xstride;
@@ -385,12 +385,12 @@ void od_mc_blend_full16_c(unsigned char *dst, int dystride,
     for (i = 0; i < xblk_sz; i++) {
       int32_t a;
       int32_t b;
-      a = ((uint16_t *)(src[0]))[j*xblk_sz + i];
-      b = ((uint16_t *)(src[3]))[j*xblk_sz + i];
-      a = (a << log_xblk_sz) + (((uint16_t *)(src[1]))[j*xblk_sz + i] - a)*i;
-      b = (b << log_xblk_sz) + (((uint16_t *)(src[2]))[j*xblk_sz + i] - b)*i;
-      ((uint16_t *)dst)[i] =
-       OD_CLAMPU16(((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2);
+      a = ((int16_t *)(src[0]))[j*xblk_sz + i];
+      b = ((int16_t *)(src[3]))[j*xblk_sz + i];
+      a = (a << log_xblk_sz) + (((int16_t *)(src[1]))[j*xblk_sz + i] - a)*i;
+      b = (b << log_xblk_sz) + (((int16_t *)(src[2]))[j*xblk_sz + i] - b)*i;
+      ((int16_t *)dst)[i] =
+       ((a << log_yblk_sz) + (b - a)*j + round) >> log_blk_sz2;
     }
     dst += dystride;
   }
@@ -730,10 +730,10 @@ void od_mc_blend_multi8_c(unsigned char *dst, int dystride,
 
 void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
  const unsigned char *src[4], int log_xblk_sz, int log_yblk_sz) {
-  const uint16_t *src16;
+  const int16_t *src16;
   int32_t src_ll[4][8][8];
   int32_t dst_ll[8][8];
-  const uint16_t *p;
+  const int16_t *p;
   ptrdiff_t o;
   int32_t a;
   int32_t b;
@@ -766,7 +766,7 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
   /*Compute the low-pass band for each src block.*/
   for (k = 0; k < 4; k++) {
     int32_t lh[4][8];
-    p = (uint16_t *)(src[k]);
+    p = (int16_t *)(src[k]);
     src_ll[k][0][0] = p[0];
     for (i = 1; i < xblk_sz_2; i++) {
       i2 = i << 1;
@@ -815,7 +815,7 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
   o = 0;
   for (j = 0; j < yblk_sz_4; j++) {
     /*Upper-left quadrant.*/
-    src16 = (uint16_t *)(src[0]);
+    src16 = (int16_t *)(src[0]);
     for (i = 0; i < xblk_sz_4; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -828,19 +828,19 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
       g = (src_ll[0][j][i] + src_ll[0][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[0][j][i] + src_ll[0][j][i + 1]
        + src_ll[0][j + 1][i] + src_ll[0][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-       (((src16 + o)[i2 + 1] <<log_blk_sz2) + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
+       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2 + 1] =
+       (((src16 + o)[i2 + 1] <<log_blk_sz2) + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
        (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-       log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+       log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
        (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-       log_blk_sz2);
+       log_blk_sz2;
     }
     /*Upper-right quadrant.*/
-    src16 = (uint16_t *)(src[1]);
+    src16 = (int16_t *)(src[1]);
     for (; i < xblk_sz_2 - 1; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -853,16 +853,16 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
       g = (src_ll[1][j][i] + src_ll[1][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[1][j][i] + src_ll[1][j][i + 1]
        + src_ll[1][j + 1][i] + src_ll[1][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
+       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2 + 1] =
+       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
        (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-       log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+       log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
        (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-       log_blk_sz2);
+       log_blk_sz2;
     }
     /*Upper-right quadrant, last column.*/
     i2 = i << 1;
@@ -876,22 +876,22 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
     g = (src_ll[1][j][i] + src_ll[1][j+1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[1][j][i] + src_ll[1][j + 1][i])
      - (src_ll[1][j][i - 1] + src_ll[1][j + 1][i - 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
+     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
+     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
      (((src16 + o + xblk_sz)[i2]<< log_blk_sz2) + c - g + round) >>
-     log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+     log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
      (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-     log_blk_sz2);
+     log_blk_sz2;
     o += xblk_sz << 1;
     dst += dystride << 1;
   }
   for (; j < yblk_sz_2 - 1; j++) {
     /*Lower-left quadrant.*/
-    src16 = (uint16_t *)(src[3]);
+    src16 = (int16_t *)(src[3]);
     for (i = 0; i < xblk_sz_4; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -904,19 +904,19 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
       g = (src_ll[3][j][i] + src_ll[3][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[3][j][i] + src_ll[3][j][i + 1]
        + src_ll[3][j + 1][i] + src_ll[3][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
+       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2 + 1] =
+       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
        (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-       log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+       log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
        (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-       log_blk_sz2);
+       log_blk_sz2;
     }
     /*Lower-right quadrant.*/
-    src16 = (uint16_t *)(src[2]);
+    src16 = (int16_t *)(src[2]);
     for (; i < xblk_sz_2 - 1; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -929,16 +929,16 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
       g = (src_ll[2][j][i] + src_ll[2][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[2][j][i] + src_ll[2][j][i + 1]
        + src_ll[2][j + 1][i] + src_ll[2][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
-       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
+       (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2+1] =
+       (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
        (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-       log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+       log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
        (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-       log_blk_sz2);
+       log_blk_sz2;
     }
     /*Lower-right quadrant, last column.*/
     i2 = i << 1;
@@ -952,21 +952,21 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
     g = (src_ll[2][j][i] + src_ll[2][j + 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[2][j][i] + src_ll[2][j + 1][i])
      - (src_ll[2][j][i - 1] + src_ll[2][j + 1][i - 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
+     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
+     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
      (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-     log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+     log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
      (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-     log_blk_sz2);
+     log_blk_sz2;
     o += xblk_sz << 1;
     dst += dystride << 1;
   }
   /*Lower-left quadrant, last row.*/
-  src16 = (uint16_t *)(src[3]);
+  src16 = (int16_t *)(src[3]);
   for (i = 0; i < xblk_sz_4; i++) {
     i2 = i << 1;
     a = dst_ll[j][i] << 2;
@@ -979,19 +979,19 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
     g = (3*src_ll[3][j][i] - src_ll[3][j - 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[3][j][i] + src_ll[3][j][i + 1])
      - (src_ll[3][j - 1][i] + src_ll[3][j - 1][i + 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
-     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
+     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
+     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
      (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-     log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+     log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
      (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-     log_blk_sz2);
+     log_blk_sz2;
   }
   /*Lower-right quadrant, last row.*/
-  src16 = (uint16_t *)(src[2]);
+  src16 = (int16_t *)(src[2]);
   for (; i < xblk_sz_2 - 1; i++) {
     i2 = i << 1;
     a = dst_ll[j][i] << 2;
@@ -1004,16 +1004,16 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
     g = (3*src_ll[2][j][i] - src_ll[2][j - 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[2][j][i] + src_ll[2][j][i + 1])
      - (src_ll[2][j - 1][i] + src_ll[2][j - 1][i + 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
-     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
+     (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2+1] =
+     (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
      (((src16 + o + xblk_sz)[i2] << log_blk_sz2) + c - g + round) >>
-     log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+     log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
      (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-     log_blk_sz2);
+     log_blk_sz2;
   }
   /*Lower-right quadrant, last row and column.*/
   i2 = i << 1;
@@ -1027,15 +1027,15 @@ void od_mc_blend_multi16_c(unsigned char *dst, int dystride,
   g = (3*src_ll[2][j][i] - src_ll[2][j - 1][i]) << (log_blk_sz2 - 1);
   h = (9*src_ll[2][j][i] - 3*(src_ll[2][j][i - 1] + src_ll[2][j - 1][i])
    + src_ll[2][j - 1][i - 1]) << (log_blk_sz2 - 2);
-  ((uint16_t *)dst)[i2] = OD_CLAMPU16(
-   (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2);
-  ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
-   (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2);
-  ((uint16_t *)(dst + dystride))[i2] = OD_CLAMPU16(
-   (((src16 + o + xblk_sz)[i2]<<log_blk_sz2) + c - g + round) >> log_blk_sz2);
-  ((uint16_t *)(dst + dystride))[i2 + 1] = OD_CLAMPU16(
+  ((int16_t *)dst)[i2] =
+   (((src16 + o)[i2] << log_blk_sz2) + a - e + round) >> log_blk_sz2;
+  ((int16_t *)dst)[i2+1] =
+   (((src16 + o)[i2 + 1] << log_blk_sz2) + b - f + round) >> log_blk_sz2;
+  ((int16_t *)(dst + dystride))[i2] =
+   (((src16 + o + xblk_sz)[i2]<<log_blk_sz2) + c - g + round) >> log_blk_sz2;
+  ((int16_t *)(dst + dystride))[i2 + 1] =
    (((src16 + o + xblk_sz)[i2 + 1] << log_blk_sz2) + d - h + round) >>
-   log_blk_sz2);
+   log_blk_sz2;
 }
 
 static void od_mc_blend_multi(od_state *state, unsigned char *dst,
@@ -1172,12 +1172,12 @@ void od_mc_blend_full_split16_c(unsigned char *dst, int dystride,
       int32_t b;
       int32_t c;
       int32_t d;
-      a = ((uint16_t *)src[0])[j*xblk_sz + i];
-      b = (((uint16_t *)src[1])[j*xblk_sz + i] - a)*sw[1];
-      c = (((uint16_t *)src[2])[j*xblk_sz + i] - a)*sw[2];
-      d = (((uint16_t *)src[3])[j*xblk_sz + i] - a)*sw[3];
-      ((uint16_t *)dst)[i] = OD_CLAMPU16(((a << log_blk_sz2p1)
-       + b + c + d + round) >> log_blk_sz2p1);
+      a = ((int16_t *)src[0])[j*xblk_sz + i];
+      b = (((int16_t *)src[1])[j*xblk_sz + i] - a)*sw[1];
+      c = (((int16_t *)src[2])[j*xblk_sz + i] - a)*sw[2];
+      d = (((int16_t *)src[3])[j*xblk_sz + i] - a)*sw[3];
+      ((int16_t *)dst)[i] = ((a << log_blk_sz2p1)
+       + b + c + d + round) >> log_blk_sz2p1;
       /*LOOP VECTORIZES.*/
       for (k = 0; k < 4; k++) sw[k] += dsdi[k];
     }
@@ -1549,12 +1549,12 @@ void od_mc_blend_multi_split8_c(unsigned char *dst, int dystride,
 void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
  const unsigned char *src[4], int oc, int s,
  int log_xblk_sz, int log_yblk_sz) {
-  const uint16_t *src16;
+  const int16_t *src16;
   int32_t src_ll[4][8][8];
   int32_t dst_ll[8][8];
-  const uint16_t *drc[4];
-  const uint16_t *p;
-  const uint16_t *q;
+  const int16_t *drc[4];
+  const int16_t *p;
+  const int16_t *q;
   ptrdiff_t o;
   int a;
   int b;
@@ -1581,15 +1581,15 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
   yblk_sz = 1 << log_yblk_sz;
   /*Set up a second set of image pointers based on the given split state to
     properly shift weight from one image to another.*/
-  drc[oc] = (uint16_t *)(src[oc]);
+  drc[oc] = (int16_t *)(src[oc]);
   j = (oc + (s & 1)) & 3;
   k = (oc + 1) & 3;
-  drc[k] = (uint16_t *)(src[j]);
+  drc[k] = (int16_t *)(src[j]);
   j = (oc + (s & 2) + ((s & 2) >> 1)) & 3;
   k = (oc + 3) & 3;
-  drc[k] = (uint16_t *)(src[j]);
+  drc[k] = (int16_t *)(src[j]);
   k = oc ^ 2;
-  drc[k] = (uint16_t *)(src[k]);
+  drc[k] = (int16_t *)(src[k]);
   /*Perform multiresolution blending.*/
   xblk_sz_2 = xblk_sz >> 1;
   yblk_sz_2 = yblk_sz >> 1;
@@ -1598,7 +1598,7 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
   /*Compute the low-pass band for each src block.*/
   for (k = 0; k < 4; k++) {
     int32_t lh[4][8];
-    p = (uint16_t *)(src[k]);
+    p = (int16_t *)(src[k]);
     q = drc[k];
     src_ll[k][0][0] = (p[0] + q[0] + 1) >> 1;
     for (i = 1; i < xblk_sz_2; i++) {
@@ -1656,7 +1656,7 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
   o = 0;
   for (j = 0; j < yblk_sz_4; j++) {
     /*Upper-left quadrant.*/
-    src16 = (uint16_t *)(src[0]);
+    src16 = (int16_t *)(src[0]);
     for (i = 0; i < xblk_sz_4; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -1669,23 +1669,23 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
       g = (src_ll[0][j][i] + src_ll[0][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[0][j][i] + src_ll[0][j][i + 1]
        + src_ll[0][j + 1][i] + src_ll[0][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
        ((((src16 + o)[i2] + (drc[0] + o)[i2]) << (log_blk_sz2 - 1))
-       + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
+       + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2+1] =
        ((((src16 + o)[i2 + 1] + (drc[0] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-       + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+       + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
+       ((((src16 + o + xblk_sz)[i2]
        + (drc[0] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-       + c - g + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+       + c - g + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
+       ((((src16 + o + xblk_sz)[i2 + 1]
        + (drc[0] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-       + d - h + round) >> log_blk_sz2);
+       + d - h + round) >> log_blk_sz2;
     }
     /*Upper-right quadrant.*/
-    src16 = (uint16_t *)(src[1]);
+    src16 = (int16_t *)(src[1]);
     for (; i < xblk_sz_2 - 1; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -1698,20 +1698,20 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
       g = (src_ll[1][j][i] + src_ll[1][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[1][j][i] + src_ll[1][j][i + 1]
        + src_ll[1][j + 1][i] + src_ll[1][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
        ((((src16 + o)[i2] + (drc[1] + o)[i2]) << (log_blk_sz2 - 1))
-       + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+       + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2 + 1] =
        ((((src16 + o)[i2 + 1] + (drc[1] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-       + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+       + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
+       ((((src16 + o + xblk_sz)[i2]
        + (drc[1] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-       + c - g + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+       + c - g + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
+       ((((src16 + o + xblk_sz)[i2 + 1]
        + (drc[1] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-       + d - h + round) >> log_blk_sz2);
+       + d - h + round) >> log_blk_sz2;
     }
     /*Upper-right quadrant, last column.*/
     i2 = i << 1;
@@ -1725,26 +1725,26 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
     g = (src_ll[1][j][i] + src_ll[1][j + 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[1][j][i] + src_ll[1][j + 1][i])
      - (src_ll[1][j][i - 1] + src_ll[1][j + 1][i - 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
      ((((src16 + o)[i2] + (drc[1] + o)[i2]) << (log_blk_sz2 - 1))
-     + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+     + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
      ((((src16 + o)[i2 + 1] + (drc[1] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-     + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+     + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
+     ((((src16 + o + xblk_sz)[i2]
      + (drc[1] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-     + c - g + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+     + c - g + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
+     ((((src16 + o + xblk_sz)[i2 + 1]
      + (drc[1] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-     + d - h + round) >> log_blk_sz2);
+     + d - h + round) >> log_blk_sz2;
     o += xblk_sz << 1;
     dst += dystride << 1;
   }
   for (; j < yblk_sz_2 - 1; j++) {
     /*Lower-left quadrant.*/
-    src16 = (uint16_t *)(src[3]);
+    src16 = (int16_t *)(src[3]);
     for (i = 0; i < xblk_sz_4; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -1757,23 +1757,23 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
       g = (src_ll[3][j][i] + src_ll[3][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[3][j][i] + src_ll[3][j][i + 1]
        + src_ll[3][j + 1][i] + src_ll[3][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
        ((((src16 + o)[i2] + (drc[3] + o)[i2]) << (log_blk_sz2 - 1))
-       + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
+       + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2+1] =
        ((((src16 + o)[i2 + 1] + (drc[3] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-       + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+       + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
+       ((((src16 + o + xblk_sz)[i2]
        + (drc[3] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-       + c - g + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+       + c - g + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
+       ((((src16 + o + xblk_sz)[i2 + 1]
        + (drc[3] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-       + d - h + round) >> log_blk_sz2);
+       + d - h + round) >> log_blk_sz2;
     }
     /*Lower-right quadrant.*/
-    src16 = (uint16_t *)(src[2]);
+    src16 = (int16_t *)(src[2]);
     for (; i < xblk_sz_2 - 1; i++) {
       i2 = i << 1;
       a = dst_ll[j][i] << 2;
@@ -1786,20 +1786,20 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
       g = (src_ll[2][j][i] + src_ll[2][j + 1][i]) << (log_blk_sz2 - 1);
       h = (src_ll[2][j][i] + src_ll[2][j][i + 1]
        + src_ll[2][j + 1][i] + src_ll[2][j + 1][i + 1]) << (log_blk_sz2 - 2);
-      ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+      ((int16_t *)dst)[i2] =
        ((((src16 + o)[i2] + (drc[2] + o)[i2]) << (log_blk_sz2 - 1))
-       + a - e + round) >> log_blk_sz2);
-      ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+       + a - e + round) >> log_blk_sz2;
+      ((int16_t *)dst)[i2 + 1] =
        ((((src16 + o)[i2 + 1] + (drc[2] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-       + b - f + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+       + b - f + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2] =
+       ((((src16 + o + xblk_sz)[i2]
        + (drc[2] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-       + c - g + round) >> log_blk_sz2);
-      ((uint16_t *)(dst + dystride))[i2 + 1] =
-       OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+       + c - g + round) >> log_blk_sz2;
+      ((int16_t *)(dst + dystride))[i2 + 1] =
+       ((((src16 + o + xblk_sz)[i2 + 1]
        + (drc[2] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-       + d - h + round) >> log_blk_sz2);
+       + d - h + round) >> log_blk_sz2;
     }
     /*Lower-right quadrant, last column.*/
     i2 = i << 1;
@@ -1813,25 +1813,25 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
     g = (src_ll[2][j][i] + src_ll[2][j+1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[2][j][i] + src_ll[2][j + 1][i])
      - (src_ll[2][j][i - 1] + src_ll[2][j + 1][i - 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
      ((((src16 + o)[i2] + (drc[2] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-     + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+     + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
      ((((src16 + o)[i2 + 1] + (drc[2] + o)[i2]) << (log_blk_sz2 - 1))
-     + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2] +
+     + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
+     ((((src16 + o + xblk_sz)[i2] +
      (drc[2] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-     + c - g + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+     + c - g + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
+     ((((src16 + o + xblk_sz)[i2 + 1]
      + (drc[2] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-     + d - h + round) >> log_blk_sz2);
+     + d - h + round) >> log_blk_sz2;
     o += xblk_sz << 1;
     dst += dystride << 1;
   }
   /*Lower-left quadrant, last row.*/
-  src16 = (uint16_t *)(src[3]);
+  src16 = (int16_t *)(src[3]);
   for (i = 0; i < xblk_sz_4; i++) {
     i2 = i << 1;
     a = dst_ll[j][i] << 2;
@@ -1844,23 +1844,23 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
     g = (3*src_ll[3][j][i] - src_ll[3][j - 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[3][j][i] + src_ll[3][j][i + 1])
      - (src_ll[3][j - 1][i] + src_ll[3][j - 1][i + 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
      ((((src16 + o)[i2] + (drc[3] + o)[i2]) << (log_blk_sz2 - 1))
-     + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2+1] = OD_CLAMPU16(
+     + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2+1] =
      ((((src16 + o)[i2 + 1] + (drc[3] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-     + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+     + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
+     ((((src16 + o + xblk_sz)[i2]
      + (drc[3] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-     + c - g + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+     + c - g + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
+     ((((src16 + o + xblk_sz)[i2 + 1]
      + (drc[3] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-     + d - h + round) >> log_blk_sz2);
+     + d - h + round) >> log_blk_sz2;
   }
   /*Lower-right quadrant, last row.*/
-  src16 = (uint16_t *)(src[2]);
+  src16 = (int16_t *)(src[2]);
   for (; i < xblk_sz_2 - 1; i++) {
     i2 = i << 1;
     a = dst_ll[j][i] << 2;
@@ -1873,20 +1873,20 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
     g = (3*src_ll[2][j][i] - src_ll[2][j - 1][i]) << (log_blk_sz2 - 1);
     h = (3*(src_ll[2][j][i] + src_ll[2][j][i + 1])
      - (src_ll[2][j - 1][i] + src_ll[2][j - 1][i + 1])) << (log_blk_sz2 - 2);
-    ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+    ((int16_t *)dst)[i2] =
      ((((src16 + o)[i2] + (drc[2] + o)[i2]) << (log_blk_sz2 - 1))
-     + a - e + round) >> log_blk_sz2);
-    ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+     + a - e + round) >> log_blk_sz2;
+    ((int16_t *)dst)[i2 + 1] =
      ((((src16 + o)[i2 + 1] + (drc[2] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-     + b - f + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+     + b - f + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2] =
+     ((((src16 + o + xblk_sz)[i2]
      + (drc[2] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-     + c - g + round) >> log_blk_sz2);
-    ((uint16_t *)(dst + dystride))[i2 + 1] =
-     OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1] +
+     + c - g + round) >> log_blk_sz2;
+    ((int16_t *)(dst + dystride))[i2 + 1] =
+     ((((src16 + o + xblk_sz)[i2 + 1] +
      (drc[2] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-     + d - h + round) >>log_blk_sz2);
+     + d - h + round) >>log_blk_sz2;
   }
   /*Lower-right quadrant, last row and column.*/
   i2 = i << 1;
@@ -1900,20 +1900,20 @@ void od_mc_blend_multi_split16_c(unsigned char *dst, int dystride,
   g = (3*src_ll[2][j][i] - src_ll[2][j - 1][i]) << (log_blk_sz2 - 1);
   h = (9*src_ll[2][j][i] - 3*(src_ll[2][j][i - 1] + src_ll[2][j - 1][i])
    + src_ll[2][j - 1][i - 1]) << (log_blk_sz2 - 2);
-  ((uint16_t *)dst)[i2] = OD_CLAMPU16(
+  ((int16_t *)dst)[i2] =
    ((((src16 + o)[i2] + (drc[2] + o)[i2]) << (log_blk_sz2 - 1))
-   + a - e + round) >> log_blk_sz2);
-  ((uint16_t *)dst)[i2 + 1] = OD_CLAMPU16(
+   + a - e + round) >> log_blk_sz2;
+  ((int16_t *)dst)[i2 + 1] =
    ((((src16 + o)[i2 + 1] + (drc[2] + o)[i2 + 1]) << (log_blk_sz2 - 1))
-   + b - f + round) >> log_blk_sz2);
-  ((uint16_t *)(dst + dystride))[i2] =
-   OD_CLAMPU16(((((src16 + o + xblk_sz)[i2]
+   + b - f + round) >> log_blk_sz2;
+  ((int16_t *)(dst + dystride))[i2] =
+   ((((src16 + o + xblk_sz)[i2]
    + (drc[2] + o + xblk_sz)[i2]) << (log_blk_sz2 - 1))
-   + c - g + round) >> log_blk_sz2);
-  ((uint16_t *)(dst + dystride))[i2 + 1] =
-   OD_CLAMPU16(((((src16 + o + xblk_sz)[i2 + 1]
+   + c - g + round) >> log_blk_sz2;
+  ((int16_t *)(dst + dystride))[i2 + 1] =
+   ((((src16 + o + xblk_sz)[i2 + 1]
    + (drc[2] + o + xblk_sz)[i2 + 1]) << (log_blk_sz2 - 1))
-   + d - h + round) >> log_blk_sz2);
+   + d - h + round) >> log_blk_sz2;
 }
 
 void od_mc_blend_multi_split(od_state *state, unsigned char *dst,

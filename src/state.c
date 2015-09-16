@@ -90,7 +90,8 @@ void od_aligned_free(void *_ptr) {
   }
 }
 
-/*Truncates the actual used bitdepth of an image to 8 significant bits.*/
+/*Truncates and clamps the actual used bitdepth of an image to 8
+  significant bits.*/
 void od_img_truncate(od_img *img){
   int x;
   int y;
@@ -109,7 +110,7 @@ void od_img_truncate(od_img *img){
       int shift = iplane->bitdepth-8;
       for(y=0; y<plane_height; y++){
         for(x=0; x<plane_width; x++){
-          ((uint16_t *)data)[x] = OD_CLAMP255(((uint16_t *)data)[x] + (1 << shift >> 1) >> shift) << shift;
+          ((int16_t *)data)[x] = OD_CLAMP255(((int16_t *)data)[x] + (1 << shift >> 1) >> shift) << shift;
         }
         data += iplane->ystride;
       }
@@ -119,6 +120,8 @@ void od_img_truncate(od_img *img){
 
 /*This is a smart copy that copies the intersection of the two img planes
    and performs any needed bitdepth conversion.
+  Note that this copy performs clamping as it's only used for copying into
+   and out of the codec, not for internal reference->reference copies.
   Does not touch any padding/border/unintersected area.*/
 void od_img_plane_copy(od_img* dst, od_img* src, int pli) {
   od_img_plane *dst_p;
@@ -173,8 +176,10 @@ void od_img_plane_copy(od_img* dst, od_img* src, int pli) {
       else {
         int upshift = dst_p->bitdepth - src_p->bitdepth;
         for (x = 0; x < w; x++) {
-          ((uint16_t *)dst_data)[x] =
-           OD_CLAMPU16(src_data[x] << upshift);
+          ((int16_t *)dst_data)[x] =
+            OD_CLAMPI(0,
+             src_data[x] << upshift,
+             (1 << dst_p->bitdepth) - 1);
         }
       }
     }
@@ -182,7 +187,7 @@ void od_img_plane_copy(od_img* dst, od_img* src, int pli) {
       if (dst_xstride == 1){
         int dnshift = src_p->bitdepth - dst_p->bitdepth;
         for (x = 0; x < w; x++) {
-          dst_data[x] = OD_CLAMP255(((uint16_t *)src_data)[x]
+          dst_data[x] = OD_CLAMP255(((int16_t *)src_data)[x]
            + (1 << dnshift >> 1) >> dnshift);
         }
       }
@@ -190,16 +195,19 @@ void od_img_plane_copy(od_img* dst, od_img* src, int pli) {
         if (dst_p->bitdepth >= src_p->bitdepth) {
           int upshift = dst_p->bitdepth - src_p->bitdepth;
           for (x = 0; x < w; x++) {
-            ((uint16_t *)dst_data)[x] =
-             OD_CLAMPU16(((uint16_t *)src_data)[x] << upshift);
+            ((int16_t *)dst_data)[x] =
+              OD_CLAMPI(0,
+               ((int16_t *)src_data)[x] << upshift,
+               (1 << dst_p->bitdepth) - 1);
           }
         }
         else {
           int dnshift = src_p->bitdepth - dst_p->bitdepth;
           for (x = 0; x < w; x++) {
-            ((uint16_t *)dst_data)[x] =
-              OD_CLAMPU16(((uint16_t *)src_data)[x]
-               + (1 << dnshift >> 1) >> dnshift);
+            ((int16_t *)dst_data)[x] =
+             OD_CLAMPI(0,
+              ((int16_t *)src_data)[x] + (1 << dnshift >> 1) >> dnshift,
+              (1 << dst_p->bitdepth) - 1);
           }
         }
       }
@@ -797,7 +805,7 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
       if(xstride>1){
         for (x = 0; x < (pic_width + xdec) >> xdec; x++) {
           int value;
-          value = *((uint16_t *)(img->planes[pli].data + ystride*y + xstride*x))
+          value = *((int16_t *)(img->planes[pli].data + ystride*y + xstride*x))
            + (1 << img->planes[pli].bitdepth >> 9)
            >> (img->planes[pli].bitdepth - 8);
           if(fputc(value, fp) == EOF){
@@ -823,8 +831,8 @@ int od_state_dump_yuv(od_state *state, od_img *img, const char *tag) {
 # include <zlib.h>
 
 #define OD_IMGVAL(pli,x) (img->planes[pli].bitdepth == 8 ? \
-  ((float)(p[(pli)][(x)])) : \
-  (((uint16_t *)(p[(pli)]))[(x)] / (float)(1 << (img->planes[pli].bitdepth-8))))
+  ((float)p[(pli)][(x)]) : \
+  (((int16_t *)p[(pli)])[(x)] / (float)(1 << (img->planes[pli].bitdepth-8))))
 
 /*Dump a PNG of the reconstructed image, or a reference frame.*/
 int od_state_dump_img(od_state *state, od_img *img, const char *tag) {
@@ -1225,7 +1233,7 @@ void od_img_plane_to_coeff(od_coeff *dst, int no_coeff_shift,
   else{
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
-        dst[y*w + x] = *(uint16_t *)(src_data + src_ystride*y + x*src_xstride)
+        dst[y*w + x] = *(int16_t *)(src_data + src_ystride*y + x*src_xstride)
          - (1 << bits >> 1) << coeff_shift;
       }
     }
@@ -1235,7 +1243,6 @@ void od_img_plane_to_coeff(od_coeff *dst, int no_coeff_shift,
 void od_coeff_to_img_plane(od_img *dst, int pli,
  od_coeff *src, int no_coeff_shift){
   od_img_plane *iplane;
-  int bits;
   int xdec;
   int ydec;
   int h;
@@ -1244,11 +1251,8 @@ void od_coeff_to_img_plane(od_img *dst, int pli,
   int y;
   int dst_xstride;
   int dst_ystride;
-  int coeff_depth;
-  int coeff_shift;
   unsigned char *dst_data;
   iplane = dst->planes + pli;
-  bits = iplane->bitdepth;
   xdec = iplane->xdec;
   ydec = iplane->ydec;
   w = dst->width >> xdec;
@@ -1256,27 +1260,31 @@ void od_coeff_to_img_plane(od_img *dst, int pli,
   dst_xstride = iplane->xstride;
   dst_ystride = iplane->ystride;
   dst_data = iplane->data;
-  coeff_depth = no_coeff_shift ? bits : 8+OD_COEFF_SHIFT;
-  coeff_shift = coeff_depth - bits;
   if (dst_xstride == 1) {
+    /* 8 bit reference; the coefficients are either at full precision
+       (lossy coding) or at 8 bit as well (lossless standard depth
+       encoding) */
+    int coeff_depth;
+    int coeff_shift;
+    coeff_depth = no_coeff_shift ? 8 : 8+OD_COEFF_SHIFT;
+    coeff_shift = coeff_depth - 8;
+
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
         *(dst_data + x) =
-         OD_CLAMP255((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
-         + 128);
+         OD_CLAMP255((src[x] + (1 << coeff_shift >> 1) >> coeff_shift) + 128);
       }
       dst_data += dst_ystride;
       src += w;
     }
   }
   else{
+    /*References can only be > 8 bit if we're running at the same depth
+       as the transforms.
+      Centering will still be different however.*/
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
-        ((uint16_t *)dst_data)[x] =
-         OD_CLAMPU16((src[x] + (1 << coeff_shift >> 1) >> coeff_shift)
-         + (1 << bits >> 1));
-        /*((uint16_t *)dst_data)[x] =
-          OD_CLAMP255((src[x] + (1 << 4 >> 1) >> 4)+128) << 4;*/
+        ((int16_t *)dst_data)[x] = src[x] + (1 << iplane->bitdepth >> 1);
       }
       dst_data += dst_ystride;
       src += w;
