@@ -1898,7 +1898,6 @@ static void od_predict_frame(daala_enc_ctx *enc) {
     predict unpredictable areas when lambda is too small.
    Hopefully when we fix that, we can remove the limit.*/
   /* test: truncate the frame */
-  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_PREV]);
   od_mv_est(enc->mvest, OD_FRAME_PREV,
    OD_MAXI((4000000 + (((1 << OD_COEFF_SHIFT) - 1) >> 1) >> OD_COEFF_SHIFT)*
    enc->quantizer[0] >> (23 - OD_LAMBDA_SCALE), 40));
@@ -1908,6 +1907,7 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   /*Do edge extension here because the block-size analysis needs to read
     outside the frame, but otherwise isn't read from.*/
   od_img_edge_ext(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
+  od_img_truncate(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reconstructed frame.*/
   /*od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");*/
