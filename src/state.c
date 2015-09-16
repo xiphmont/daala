@@ -360,7 +360,7 @@ static int od_state_init_impl(od_state *state, const daala_info *info) {
    ~(OD_BSIZE_MAX - 1);
   state->nhmvbs = state->frame_width >> OD_LOG_MVBSIZE_MIN;
   state->nvmvbs = state->frame_height >> OD_LOG_MVBSIZE_MIN;
-#if 1
+#if 0
   state->full_precision_references = 1;
 #else
   state->full_precision_references = info->bitdepth > 8;
