@@ -1657,6 +1657,10 @@ static const unsigned char OD_YCbCr_BORDER[3] = {113, 72, 137};
 static const unsigned char OD_YCbCr_EDGE[3] = {41, 240, 110};
 static const unsigned char OD_YCbCr_MV[3] = {81, 90, 240};
 
+#define OD_SRCVAL(x) (siplane->bitdepth == 8 ? src[(x)] : \
+ (((int16_t *)src)[(x)] + (1<<siplane->bitdepth - 9) \
+ >> siplane->bitdepth - 8))
+
 /*Upsamples the reconstructed image to a reference image.
   TODO: Pipeline with reconstruction.*/
 static void od_img_upsample8(daala_enc_ctx *enc, od_img *dimg,
@@ -1686,44 +1690,52 @@ static void od_img_upsample8(daala_enc_ctx *enc, od_img *dimg,
       if (y < h + ypad) {
         unsigned char *buf;
         buf = enc->upsample_line_buf[y & 7];
-        memset(buf - (xpad << 1), src[0], (xpad - 2) << 1);
+        memset(buf - (xpad << 1), OD_SRCVAL(0), (xpad - 2) << 1);
         /*for (x = -xpad; x < -2; x++) {
-          *(buf + (x << 1)) = src[0];
-          *(buf + (x << 1 | 1)) = src[0];
+          *(buf + (x << 1)) = OD_SRCVAL(0);
+          *(buf + (x << 1 | 1)) = OD_SRCVAL(0);
         }*/
-        *(buf - 4) = src[0];
-        *(buf - 3) = OD_CLAMP255((31*src[0] + src[1] + 16) >> 5);
-        *(buf - 2) = src[0];
-        *(buf - 1) = OD_CLAMP255((36*src[0] - 5*src[1] + src[1] + 16) >> 5);
-        buf[0] = src[0];
-        buf[1] = OD_CLAMP255((20*(src[0] + src[1])
-         - 5*(src[0] + src[2]) + src[0] + src[3] + 16) >> 5);
-        buf[2] = src[1];
-        buf[3] = OD_CLAMP255((20*(src[1] + src[2])
-         - 5*(src[0] + src[3]) + src[0] + src[4] + 16) >> 5);
+        *(buf - 4) = OD_SRCVAL(0);
+        *(buf - 3) = OD_CLAMP255((31*OD_SRCVAL(0) + OD_SRCVAL(1) + 16) >> 5);
+        *(buf - 2) = OD_SRCVAL(0);
+        *(buf - 1) = OD_CLAMP255((36*OD_SRCVAL(0) - 5*OD_SRCVAL(1)
+         + OD_SRCVAL(1) + 16) >> 5);
+        buf[0] = OD_SRCVAL(0);
+        buf[1] = OD_CLAMP255((20*(OD_SRCVAL(0) + OD_SRCVAL(1))
+         - 5*(OD_SRCVAL(0) + OD_SRCVAL(2)) + OD_SRCVAL(0)
+         + OD_SRCVAL(3) + 16) >> 5);
+        buf[2] = OD_SRCVAL(1);
+        buf[3] = OD_CLAMP255((20*(OD_SRCVAL(1) + OD_SRCVAL(2))
+         - 5*(OD_SRCVAL(0) + OD_SRCVAL(3)) + OD_SRCVAL(0)
+         + OD_SRCVAL(4) + 16) >> 5);
         for (x = 2; x < w - 3; x++) {
-          buf[x << 1] = src[x];
-          buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-           - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 3] + 16) >> 5);
+          buf[x << 1] = OD_SRCVAL(x);
+          buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x) + OD_SRCVAL(x + 1))
+           - 5*(OD_SRCVAL(x - 1) + OD_SRCVAL(x + 2))
+           + OD_SRCVAL(x - 2) + OD_SRCVAL(x + 3) + 16) >> 5);
         }
-        buf[x << 1] = src[x];
-        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-         - 5*(src[x - 1] + src[x + 2]) + src[x - 2] + src[x + 2] + 16) >> 5);
+        buf[x << 1] = OD_SRCVAL(x);
+        buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x) + OD_SRCVAL(x + 1))
+         - 5*(OD_SRCVAL(x - 1) + OD_SRCVAL(x + 2)) + OD_SRCVAL(x - 2)
+         + OD_SRCVAL(x + 2) + 16) >> 5);
         x++;
-        buf[x << 1] = src[x];
-        buf[x << 1 | 1] = OD_CLAMP255((20*(src[x] + src[x + 1])
-         - 5*(src[x - 1] + src[x + 1]) + src[x - 2] + src[x + 1] + 16) >> 5);
+        buf[x << 1] = OD_SRCVAL(x);
+        buf[x << 1 | 1] = OD_CLAMP255((20*(OD_SRCVAL(x) + OD_SRCVAL(x + 1))
+         - 5*(OD_SRCVAL(x - 1) + OD_SRCVAL(x + 1)) + OD_SRCVAL(x - 2)
+         + OD_SRCVAL(x + 1) + 16) >> 5);
         x++;
-        buf[x << 1] = src[x];
+        buf[x << 1] = OD_SRCVAL(x);
         buf[x << 1 | 1] =
-         OD_CLAMP255((36*src[x] - 5*src[x - 1] + src[x - 2] + 16) >> 5);
+         OD_CLAMP255((36*OD_SRCVAL(x) - 5*OD_SRCVAL(x - 1)
+          + OD_SRCVAL(x - 2) + 16) >> 5);
         x++;
-        buf[x << 1] = src[w - 1];
-        buf[x << 1 | 1] = OD_CLAMP255((31*src[w - 1] + src[w - 2] + 16) >> 5);
-        memset(buf + (++x << 1), src[w - 1], (xpad - 1) << 1);
+        buf[x << 1] = OD_SRCVAL(w - 1);
+        buf[x << 1 | 1] = OD_CLAMP255((31*OD_SRCVAL(w - 1)
+         + OD_SRCVAL(w - 2) + 16) >> 5);
+        memset(buf + (++x << 1), OD_SRCVAL(w - 1), (xpad - 1) << 1);
         /*for (x++; x < w + xpad; x++) {
-          buf[x << 1] = src[w - 1];
-          buf[x << 1 | 1]=src[w - 1];
+          buf[x << 1] = OD_SRCVAL(w - 1);
+          buf[x << 1 | 1]=OD_SRCVAL(w - 1);
         }*/
         if (y >= 0 && y + 1 < h) src += siplane->ystride;
       }
@@ -2088,7 +2100,6 @@ static void od_predict_frame(daala_enc_ctx *enc) {
   od_img_edge_ext(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF]);
 #if defined(OD_DUMP_IMAGES)
   /*Dump reconstructed frame.*/
-  /*od_state_dump_img(&enc->state,enc->state.io_imgs + OD_FRAME_REC,"rec");*/
   od_encode_fill_vis(enc);
   od_state_dump_img(&enc->state, &enc->vis_img, "vis");
 #endif

@@ -163,7 +163,7 @@ struct od_adapt_ctx {
 struct od_state{
   od_adapt_ctx        adapt;
   daala_info          info;
-  OD_ALIGN16(unsigned char mc_buf[5][OD_MVBSIZE_MAX*OD_MVBSIZE_MAX]);
+  unsigned char  *mc_buf[5];
   od_state_opt_vtbl   opt_vtbl;
   uint32_t        cpu_flags;
   int32_t         frame_width;
@@ -278,6 +278,19 @@ void od_mc_blend_full_split8_c(unsigned char *_dst, int _dystride,
 void od_mc_blend_multi8_c(unsigned char *_dst, int _dystride,
  const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
 void od_mc_blend_multi_split8_c(unsigned char *_dst, int _dystride,
+ const unsigned char *_src[4], int _c, int _s, int _log_xblk_sz,
+ int _log_yblk_sz);
+void od_mc_predict1fmv16_c(od_state *state, unsigned char *_dst,
+ const unsigned char *_src, int _systride, int32_t _mvx, int32_t _mvy,
+ int _log_xblk_sz, int _log_yblk_sz);
+void od_mc_blend_full16_c(unsigned char *_dst, int _dystride,
+ const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
+void od_mc_blend_full_split16_c(unsigned char *_dst, int _dystride,
+ const unsigned char *_src[4], int _c, int _s, int _log_xblk_sz,
+ int _log_yblk_sz);
+void od_mc_blend_multi16_c(unsigned char *_dst, int _dystride,
+ const unsigned char *_src[4], int _log_xblk_sz, int _log_yblk_sz);
+void od_mc_blend_multi_split16_c(unsigned char *_dst, int _dystride,
  const unsigned char *_src[4], int _c, int _s, int _log_xblk_sz,
  int _log_yblk_sz);
 void od_restore_fpu(od_state *state);
