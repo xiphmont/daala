@@ -323,9 +323,9 @@ void od_mc_predict1fmv16_c(od_state *state, unsigned char *dst,
       for (j = 0; j < yblk_sz; j++) {
         for (i = 0; i < xblk_sz; i++) {
           ((int16_t *)dst_p)[i] = 
-           OD_CLAMPI(-32768,
+           OD_CLAMPI(-2048,
            buff_p[i] + (1 << OD_SUBPEL_COEFF_SCALE >> 1) >> OD_SUBPEL_COEFF_SCALE,
-           32767)
+           2047)
            + (128 << OD_COEFF_SHIFT);
         }
         buff_p += xblk_sz;
