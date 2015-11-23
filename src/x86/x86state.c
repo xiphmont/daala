@@ -42,8 +42,10 @@ void od_state_opt_vtbl_init_x86(od_state *_state){
   if(_state->full_precision_references) {
     /*No 16 bit assembly as yet, but it will go here.*/
     if (_state->cpu_flags&OD_CPU_X86_SSE2) {
+#if 0
 #if defined(OD_SSE2_INTRINSICS)
       _state->opt_vtbl.od_coeff_to_ref_buf = od_coeff_to_ref_buf_sse2;
+#endif
 #endif
     }
   }

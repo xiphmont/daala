@@ -1249,7 +1249,8 @@ void od_coeff_to_ref_buf_c(od_state *state,
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
         ((int16_t *)dst)[x] =
-         (src[x] << coeff_shift) + (1 << 8 + OD_COEFF_SHIFT >> 1);
+         OD_CLAMPI(-32768, src[x] << coeff_shift, 32767)
+         + (1 << 8 + OD_COEFF_SHIFT >> 1);
       }
       dst += dst_ystride;
       src += src_ystride;
