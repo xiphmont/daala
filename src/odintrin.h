@@ -219,7 +219,7 @@ static __inline int od_bsr(unsigned long x) {
 #  define OD_IFLOORF(f) ((int)floor(f))
 #  define OD_ICEILF(f)  ((int)ceil(f))
 # endif
-#define OD_FPR_CLAMP 13
+#define OD_FPR_CLAMP 14
 #define OD_FPR_CLAMP_LO (-1 << OD_FPR_CLAMP - 1)
 #define OD_FPR_CLAMP_HI ((1 << OD_FPR_CLAMP - 1) - 1)
 
