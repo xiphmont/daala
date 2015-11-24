@@ -1239,6 +1239,7 @@ void od_coeff_to_ref_buf_c(od_state *state,
     }
   }
   else {
+    int val;
     /*The references are running at greater than 8 bits, implying FPR.
       An FPR reference must run at full depth (8 + OD_COEFF_SHIFT).
       The transforms and coefficients may be operating at any supported
@@ -1248,8 +1249,9 @@ void od_coeff_to_ref_buf_c(od_state *state,
      : 0;
     for (y = 0; y < h; y++) {
       for (x = 0; x < w; x++) {
+        val = src[x] << coeff_shift;
         ((int16_t *)dst)[x] =
-         OD_CLAMPI(-2048, src[x] << coeff_shift, 2047)
+          OD_CLAMPI(OD_FPR_CLAMP_LO, val, OD_FPR_CLAMP_HI)
          + (1 << 8 + OD_COEFF_SHIFT >> 1);
       }
       dst += dst_ystride;
