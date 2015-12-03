@@ -109,6 +109,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
    returning an uint16_t.*/
 # define OD_CLAMPFPR(x) \
   ((uint16_t)((((x) < 0) - 1) & ((x) | -((x) > 4095))))
+#define OD_FPR_CLAMP 12
+#define OD_FPR_CLAMP_LO (-1 << OD_FPR_CLAMP - 1)
+#define OD_FPR_CLAMP_HI ((1 << OD_FPR_CLAMP - 1) - 1)
 /*Divides a signed integer by a positive value with exact rounding.*/
 # define OD_DIV_ROUND(x, y) (((x) + OD_FLIPSIGNI((y) >> 1, x))/(y))
 # define OD_DIV_R0(x, y) (((x) + OD_FLIPSIGNI((((y) + 1) >> 1) - 1, (x)))/(y))
