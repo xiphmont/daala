@@ -87,6 +87,7 @@ src_libdaalabase_la_SOURCES = \
 	src/pvq.c \
 	src/pvq_decoder.c \
 	src/quantizer.c \
+	src/rate.c \
 	src/state.c \
 	src/switch_table.c \
 	src/tf.c \

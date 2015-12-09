@@ -30,6 +30,7 @@ typedef struct od_params_ctx od_params_ctx;
 typedef struct od_mv_est_ctx od_mv_est_ctx;
 typedef struct od_enc_opt_vtbl od_enc_opt_vtbl;
 typedef struct od_rollback_buffer od_rollback_buffer;
+typedef struct od_rc_state od_rc_state;
 
 # include "../include/daala/daaladec.h"
 # include "../include/daala/daalaenc.h"
@@ -87,6 +88,25 @@ struct od_params_ctx {
   int mv_level_min;
   /*Set using OD_SET_MV_LEVEL_MAX*/
   int mv_level_max;
+};
+
+/*Rate control setup and working state information.*/
+struct od_rc_state {
+  /*The target bit-rate in bits per second.*/
+  long target_bitrate;
+  /*The number of frames to distribute the buffer usage over.*/
+  int buf_delay;
+  /*Will we drop frames to meet bitrate target?*/
+  unsigned char drop_frames;
+  /*Do we respect the maximum buffer fullness?*/
+  unsigned char cap_overflow;
+  /*Can the reservoir go negative?*/
+  unsigned char cap_underflow;
+  /*Two-pass mode state.
+    0 => 1-pass encoding.
+    1 => 1st pass of 2-pass encoding.
+    2 => 2nd pass of 2-pass encoding.*/
+  int twopass;
 };
 
 struct daala_enc_ctx{
@@ -164,6 +184,8 @@ struct daala_enc_ctx{
   /** Keep the display order of frames in output image buffers. */
   int out_imgs_id[2];
 #endif
+  /* Setup and state used to drive rate control.*/
+  od_rc_state rc;
 #if defined(OD_DUMP_IMAGES)
   od_img vis_img;
   od_img tmp_vis_img;
@@ -186,6 +208,12 @@ void od_encode_rollback(daala_enc_ctx *enc, const od_rollback_buffer *rbuf);
 od_mv_est_ctx *od_mv_est_alloc(od_enc_ctx *enc);
 void od_mv_est_free(od_mv_est_ctx *est);
 void od_mv_est(od_mv_est_ctx *est, int lambda);
+
+int od_enc_rc_init(od_enc_ctx *enc, long bitrate);
+int od_enc_rc_resize(od_enc_ctx *enc);
+void od_enc_rc_clear(od_enc_ctx *enc);
+int od_enc_rc_2pass_out(od_enc_ctx *enc, unsigned char **buf);
+int od_enc_rc_2pass_in(od_enc_ctx *enc, unsigned char *buf, size_t bytes);
 
 int32_t od_mc_compute_sad8_4x4_c(const unsigned char *src, int systride,
  const unsigned char *ref, int dystride);
