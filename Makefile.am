@@ -22,6 +22,7 @@ noinst_HEADERS = \
 	src/internal.h \
 	src/intra.h \
 	src/logging.h \
+	src/mathops.h \
 	src/mc.h \
 	src/mcenc.h \
 	src/odintrin.h \

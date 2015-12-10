@@ -23,13 +23,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 
 
-#if !defined(_quantizer_H)
-# define _quantizer_H (1)
+#if !defined(_mathops_H)
+# define _mathops_H (1)
+#include "internal.h"
 
-extern const int OD_N_CODED_QUANTIZERS;
-int od_quantizer_to_codedquantizer(int q);
-int od_logquantizer_to_codedquantizer(int64_t lq);
-int od_codedquantizer_to_quantizer(int cq);
-int64_t od_codedquantizer_to_logquantizer(int cq);
+#define OD_Q57(v) ((int64_t)(v) << 57)
 
 #endif
