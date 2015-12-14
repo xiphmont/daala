@@ -428,25 +428,47 @@ static void id_file(av_input *avin, const char *file) {
 
 int fetch_and_process_video(av_input *avin, ogg_page *page,
  ogg_stream_state *vo, daala_enc_ctx *dd, int video_ready,
- int *limit, int *skip) {
+ int *limit, int *skip, int passno, FILE *twopass_file) {
   daala_packet dp;
   /*No more input frames to the encoder?*/
   static int end_of_input = 0;
   /*All the input frames are encoded?*/
   static int input_frames_left_encoder_buffer = 0;
   while (!video_ready) {
-    size_t ret;
+    int ret;
+    size_t bytes;
     char frame[6];
     char c;
     if (ogg_stream_pageout(vo, page) > 0) {
       return 1;
     }
     else if (ogg_stream_eos(vo)) {
+      if(passno==1){
+        /* need to read the final (summary) packet */
+        unsigned char *buffer;
+        ret = daala_encode_ctl(dd, OD_2PASS_OUT, &buffer,
+         sizeof(buffer));
+        if (ret < 0) {
+          fprintf(stderr,
+           "Could not read two-pass summary data from encoder.\n");
+          exit(1);
+        }
+        if (fseek(twopass_file, 0, SEEK_SET) < 0) {
+          fprintf(stderr, "Unable to seek in two-pass data file.\n");
+          exit(1);
+        }
+        bytes = ret;
+        if (fwrite(buffer, 1, bytes, twopass_file) < bytes) {
+          fprintf(stderr,"Unable to write to two-pass data file.\n");
+          exit(1);
+        }
+        fflush(twopass_file);
+      }
       return 0;
     }
     if (!end_of_input) {
-      ret = fread(frame, 1, 6, avin->video_infile);
-      if (ret == 6) {
+      bytes = fread(frame, 1, 6, avin->video_infile);
+      if (bytes == 6) {
         od_img *img;
         int pli;
         if (memcmp(frame, "FRAME", 5) != 0) {
@@ -467,15 +489,14 @@ int fetch_and_process_video(av_input *avin, ogg_page *page,
         img = &avin->video_img;
         for (pli = 0; pli < img->nplanes; pli++) {
           od_img_plane *iplane;
-          int bytes;
           size_t plane_sz;
           iplane = img->planes + pli;
           bytes = iplane->bitdepth > 8 ? 2 : 1;
           plane_sz = ((avin->video_pic_w + (1 << iplane->xdec) - 1)
            >> iplane->xdec)*((avin->video_pic_h + (1 << iplane->ydec)
            - 1) >> iplane->ydec)*bytes;
-          ret = fread(iplane->data, 1, plane_sz, avin->video_infile);
-          if (ret != plane_sz) {
+          bytes = fread(iplane->data, 1, plane_sz, avin->video_infile);
+          if (bytes != plane_sz) {
             fprintf(stderr, "Error reading YUV frame data.\n");
             exit(1);
           }
@@ -507,18 +528,78 @@ int fetch_and_process_video(av_input *avin, ogg_page *page,
       This is also used to set the e_o_s bit on the final packet.*/
     while (daala_encode_packet_out(dd, end_of_input &&
      !input_frames_left_encoder_buffer, &dp)) {
-      ogg_packet op;
-      daala_to_ogg_packet(&op, &dp);
-      ogg_stream_packetin(vo, &op);
+      if (passno != 1){
+        ogg_packet op;
+        daala_to_ogg_packet(&op, &dp);
+        ogg_stream_packetin(vo, &op);
+      }
+    }
+    /*In two-pass mode's second pass, we need to submit first-pass
+      data before submitting the img to the encoder.*/
+    if (passno == 2) {
+      for (;;) {
+        static unsigned char buffer[80];
+        static int buf_pos;
+        /*Ask the encoder how many bytes it would like by submitting the
+           OD_2PASS_IN ctl with a null buffer.*/
+        ret = daala_encode_ctl(dd, OD_2PASS_IN, NULL, 0);
+        if (ret < 0) {
+          fprintf(stderr, "Error submitting pass data in second pass.\n");
+          exit(1);
+        }
+        /*If the encoder says it's got enough, stop.*/
+        if (ret == 0) break;
+        /*Otherwise, read in some more bytes.*/
+        if (ret > 80 - buf_pos) {
+          ret = 80 - buf_pos;
+        }
+        bytes = ret;
+        if (bytes > 0 &&
+            fread(buffer + buf_pos, 1, bytes, twopass_file) < bytes) {
+          fprintf(stderr,
+           "Could not read frame data from two-pass data file!\n");
+          exit(1);
+        }
+        /*And pass them in.*/
+        ret = daala_encode_ctl(dd, OD_2PASS_IN, buffer, bytes);
+        if (ret < 0) {
+          fprintf(stderr, "Error submitting pass data in second pass.\n");
+          exit(1);
+        }
+        /*If the encoder consumed the whole buffer, reset it.*/
+        if (ret >= (int)bytes) {
+          buf_pos=0;
+        }
+        else {
+          /*Otherwise remember how much it used.*/
+          buf_pos += ret;
+        }
+      }
     }
     /*Submit the current frame for encoding.*/
     daala_encode_img_in(dd, &avin->video_img, 0, end_of_input,
      &input_frames_left_encoder_buffer);
+    /*In two-pass mode's first pass we need to extract and save the
+      pass data after submitting the img to the encoder.*/
+    if (passno == 1) {
+      unsigned char *buffer;
+      ret = daala_encode_ctl(dd, OD_2PASS_OUT, &buffer, sizeof(buffer));
+      if (ret < 0) {
+        fprintf(stderr, "Could not read two-pass data from encoder.\n");
+        exit(1);
+      }
+      bytes = ret;
+      if (fwrite(buffer, 1, bytes, twopass_file) < bytes) {
+        fprintf(stderr,"Unable to write to two-pass data file.\n");
+        exit(1);
+      }
+      fflush(twopass_file);
+    }
   }
   return video_ready;
 }
 
-static const char *OPTSTRING = "ho:k:b:v:V:s:S:l:z:";
+static const char *OPTSTRING = "ho:k:b:v:V:s:S:l:z:d:\1:\2:\3\4";
 
 static const struct option OPTIONS[] = {
   { "help", no_argument, NULL, 'h' },
@@ -527,6 +608,12 @@ static const struct option OPTIONS[] = {
   { "b-frames", required_argument, NULL, 'b' },
   { "video-quality", required_argument, NULL, 'v' },
   { "video-rate-target", required_argument, NULL, 'V' },
+  { "keyframe-freq",required_argument,NULL,'k'},
+  { "buf-delay",required_argument,NULL,'d'},
+  { "soft-target",no_argument,NULL,'\4'},
+  { "two-pass",no_argument,NULL,'\3'},
+  { "second-pass",required_argument,NULL,'\2'},
+  { "first-pass",required_argument,NULL,'\1'},
   { "serial", required_argument, NULL, 's' },
   { "skip", required_argument, NULL, 'S' },
   { "limit", required_argument, NULL, 'l' },
@@ -565,10 +652,40 @@ static void usage(void) {
    "                                 lowest video quality; 1 yields the\n"
    "                                 highest quality, but large files;\n"
    "                                 0 is lossless.\n\n"
-   "  -V --video-rate-target <n>     bitrate target for Daala video;\n"
+   "  -V --video-rate-target <n>     bitrate target for Daala video in kbps;\n"
    "                                 use -v and not -V if at all possible,\n"
    "                                 as -v gives higher quality for a given\n"
-   "                                 bitrate. (Not yet implemented)\n\n"
+   "                                 bitrate.\n\n"
+   "     --buf-delay <n>             Buffer delay (in frames). Longer delays\n"
+   "                                 allow smoother rate adaptation and\n"
+   "                                 provide better overall quality, but\n"
+   "                                 require more client side buffering and\n"
+   "                                 add latency. The default value is the\n"
+   "                                 keyframe interval for one-pass encoding\n"
+   "                                 (or somewhat larger if --soft-target is\n"
+   "                                 used) and infinite for two-pass\n"
+   "                                 encoding.\n\n"
+   "     --soft-target               Use a large reservoir and treat the\n"
+   "                                 rate as a soft target; rate control is\n"
+   "                                 less strict but resulting quality is\n"
+   "                                 usually higher/smoother overall. Soft\n"
+   "                                 target also allows an optional -v\n"
+   "                                 setting to specify a minimum allowed\n"
+   "                                 quality.\n\n"
+   "     --two-pass                  Compress input using two-pass rate\n"
+   "                                 control. This option requires that the\n"
+   "                                 input to the encoder is seekable and\n"
+   "                                 performs both passes automatically.\n\n"
+   "     --first-pass <filename>     Perform first-pass of a two-pass rate\n"
+   "                                 controlled encoding, saving pass data\n"
+   "                                 to <filename> for a later second\n"
+   "                                 pass.\n\n"
+   "     --second-pass <filename>    Perform second-pass of a two-pass rate\n"
+   "                                 controlled encoding, reading first-pass\n"
+   "                                 data from <filename>.  The first pass\n"
+   "                                 data must come from a first encoding\n"
+   "                                 pass using identical input video to\n"
+   "                                 work properly.\n\n"
    "  -s --serial <n>                Specify a serial number for the stream.\n"
    "  -S --skip <n>                  Number of input frames to skip before\n"
    "                                 encoding.\n\n"
@@ -608,6 +725,10 @@ static void version(void) {
 
 int main(int argc, char **argv) {
   FILE *outfile;
+  FILE *twopass_file;
+  fpos_t video_rewind_pos;
+  int twopass;
+  int passno;
   av_input avin;
   ogg_stream_state vo;
   ogg_page og;
@@ -623,7 +744,10 @@ int main(int argc, char **argv) {
   int loi;
   int ret;
   double video_kbps;
+  int soft_target;
+  int buf_delay;
   int video_q;
+  long video_r;
   int video_keyframe_rate;
   int video_ready;
   int pli;
@@ -656,13 +780,18 @@ int main(int argc, char **argv) {
   interactive = isatty(fileno(stderr));
 #endif
   outfile = stdout;
+  twopass_file = NULL;
   memset(&avin, 0, sizeof(avin));
   avin.video_fps_n = -1;
   avin.video_fps_d = -1;
   avin.video_par_n = -1;
   avin.video_par_d = -1;
   /* Set default options */
-  video_q = 10;
+  buf_delay = -1;
+  soft_target = 0;
+  twopass = 0;
+  video_q = -1;
+  video_r = -1;
   video_keyframe_rate = 256;
   video_bytesout = 0;
   fixedserial = 0;
@@ -717,9 +846,50 @@ int main(int argc, char **argv) {
         break;
       }
       case 'V': {
-        fprintf(stderr,
-         "Target video bitrate is not yet implemented, use -v instead.\n");
-        exit(1);
+        video_r = (long)rint(atof(optarg)*1000);
+        if (video_r <= 0) {
+          fprintf(stderr,"Illegal video bitrate (choose > 0 please)\n");
+          exit(1);
+        }
+        break;
+      }
+      case 'd': {
+        buf_delay = atoi(optarg);
+        if (buf_delay <= 0) {
+          fprintf(stderr,"Illegal buffer delay\n");
+          exit(1);
+        }
+        break;
+      }
+      case '\4': {
+        soft_target = 1;
+        break;
+      }
+      case '\3': {
+        twopass = 3; /* perform both passes */
+        twopass_file = tmpfile();
+        if (!twopass_file) {
+          fprintf(stderr,"Unable to open temporary file for twopass data\n");
+          exit(1);
+        }
+        break;
+      }
+      case '\2': {
+        twopass = 2; /* perform second pass */
+        twopass_file = fopen(optarg, "rb");
+        if (!twopass_file) {
+          fprintf(stderr,"Unable to open twopass data file \'%s\'", optarg);
+          exit(1);
+        }
+        break;
+      }
+      case '\1': {
+        twopass = 1; /* perform first pass */
+        twopass_file = fopen(optarg, "wb");
+        if (!twopass_file) {
+          fprintf(stderr, "Unable to open \'%s\' for twopass data\n", optarg);
+          exit(1);
+        }
         break;
       }
       case 's': {
@@ -830,6 +1000,34 @@ int main(int argc, char **argv) {
       default: usage(); break;
     }
   }
+
+  if (soft_target) {
+    if (video_r <= 0){
+      fprintf(stderr,
+       "Soft rate target (--soft-target) requested without a bitrate (-V).\n");
+      exit(1);
+    }
+  }
+
+  if (twopass) {
+    if (video_r <= 0){
+      fprintf(stderr,
+       "Two pass encoding specified without a bitrate (-V).\n");
+      exit(1);
+    }
+  }
+
+  if (video_q == -1) {
+    if (video_r > 0) {
+      /*Rate control uses -v as a minimum quality below which the
+        encoder won't dip */
+      video_q = 512;
+    }
+    else {
+      video_q = 10;
+    }
+  }
+
   /*Assume anything following the options must be a file name.*/
   for (; optind < argc; optind++) id_file(&avin, argv[optind]);
   if(!output_provided){
@@ -844,171 +1042,326 @@ int main(int argc, char **argv) {
     fprintf(stderr, "No video files submitted for compression.\n");
     exit(1);
   }
+  if (twopass == 3) {
+    /* verify that the input is seekable! */
+    if (avin.video_infile) {
+      if (fseek(avin.video_infile, 0, SEEK_CUR)) {
+        fprintf(stderr,
+         "--two-pass (automatic two-pass) requires the video input\n"
+         "to be seekable.  For non-seekable input, encoder_example\n"
+         "must be run twice, first with the --first-pass option, then\n"
+         "with the --second-pass option.\n\n");
+        exit(1);
+      }
+      if(fgetpos(avin.video_infile, &video_rewind_pos)<0){
+        fprintf(stderr, "Unable to determine start position of video data.\n");
+        exit(1);
+      }
+    }
+  }
+
   if (!fixedserial) {
     srand(time(NULL));
     serial = rand();
   }
   ogg_stream_init(&vo, serial);
-  daala_info_init(&di);
-  di.pic_width = avin.video_pic_w;
-  di.pic_height = avin.video_pic_h;
-  switch (avin.video_depth) {
-    case 8: {
-      di.bitdepth_mode = OD_BITDEPTH_MODE_8;
-      break;
-    }
-    case 10: {
-      di.bitdepth_mode = OD_BITDEPTH_MODE_10;
-      break;
-    }
-    case 14:
-    case 16: {
-      fprintf(stderr, "Daala natively supports only 8, 10 and 12 bit depth\n"
-       "Input will be truncated to 12 bit depth for encoding\b\n");
-    }
-    /* Fall through */
-    case 12: {
-      di.bitdepth_mode = OD_BITDEPTH_MODE_12;
-      break;
-    }
-    default: {
-      fprintf(stderr, "Unsupported input bit depth (%d)\n", avin.video_depth);
-      exit(1);
-    }
-  }
-  di.timebase_numerator = avin.video_fps_n;
-  di.timebase_denominator = avin.video_fps_d;
-  di.frame_duration = 1;
-  di.pixel_aspect_numerator = avin.video_par_n;
-  di.pixel_aspect_denominator = avin.video_par_d;
-  di.nplanes = avin.video_nplanes;
-  memcpy(di.plane_info, avin.video_plane_info,
-   di.nplanes*sizeof(*di.plane_info));
-  di.keyframe_rate = video_keyframe_rate;
-  /*TODO: Other crap.*/
-  dd = daala_encode_create(&di);
   daala_comment_init(&dc);
-  /*Set up encoder.*/
-  daala_encode_ctl(dd, OD_SET_QUANT, &video_q, sizeof(video_q));
-  daala_encode_ctl(dd, OD_SET_COMPLEXITY, &complexity, sizeof(complexity));
-  daala_encode_ctl(dd, OD_SET_MC_CHROMA, &mc_use_chroma,
-   sizeof(mc_use_chroma));
-  daala_encode_ctl(dd, OD_SET_MC_SATD, &mc_use_satd,
-   sizeof(mc_use_satd));
-  daala_encode_ctl(dd, OD_SET_ACTIVITY_MASKING, &use_activity_masking,
-   sizeof(use_activity_masking));
-  daala_encode_ctl(dd, OD_SET_DERING, &use_dering,
-   sizeof(use_dering));
-  daala_encode_ctl(dd, OD_SET_MV_RES_MIN, &mv_res_min, sizeof(mv_res_min));
-  daala_encode_ctl(dd, OD_SET_QM, &qm, sizeof(qm));
-  daala_encode_ctl(dd, OD_SET_MV_LEVEL_MIN, &mv_level_min, sizeof(mv_level_min));
-  daala_encode_ctl(dd, OD_SET_MV_LEVEL_MAX, &mv_level_max, sizeof(mv_level_max));
-  daala_encode_ctl(dd, OD_SET_B_FRAMES, &b_frames, sizeof(b_frames));
-  /*Write the bitstream header packets with proper page interleave.*/
-  /*The first packet for each logical stream will get its own page
-     automatically.*/
-  if (daala_encode_flush_header(dd, &dc, &dp) <= 0) {
-    fprintf(stderr, "Internal Daala library error.\n");
-    exit(1);
-  }
-  daala_to_ogg_packet(&op, &dp);
-  ogg_stream_packetin(&vo, &op);
-  if (ogg_stream_pageout(&vo, &og) != 1) {
-    fprintf(stderr, "Internal Ogg library error.\n");
-    exit(1);
-  }
-  if (fwrite(og.header, 1, og.header_len, outfile) < (size_t)og.header_len) {
-    fprintf(stderr, "Could not complete write to file.\n");
-    exit(1);
-  }
-  if (fwrite(og.body, 1, og.body_len, outfile) < (size_t)og.body_len) {
-    fprintf(stderr, "Could not complete write to file.\n");
-    exit(1);
-  }
-  /*Create and buffer the remaining Daala headers.*/
-  for (;;) {
-    ret = daala_encode_flush_header(dd, &dc, &dp);
-    if (ret < 0) {
+
+  for (passno = (twopass == 3 ? 1 : twopass);
+   passno <= (twopass == 3 ? 2 : twopass);
+   passno++){
+    daala_info_init(&di);
+    di.pic_width = avin.video_pic_w;
+    di.pic_height = avin.video_pic_h;
+    switch (avin.video_depth) {
+      case 8: {
+        di.bitdepth_mode = OD_BITDEPTH_MODE_8;
+        break;
+      }
+      case 10: {
+        di.bitdepth_mode = OD_BITDEPTH_MODE_10;
+        break;
+      }
+      case 14:
+      case 16: {
+        fprintf(stderr, "Daala natively supports only 8, 10 and 12 bit depth\n"
+         "Input will be truncated to 12 bit depth for encoding\b\n");
+      }
+      /* Fall through */
+      case 12: {
+        di.bitdepth_mode = OD_BITDEPTH_MODE_12;
+        break;
+      }
+      default: {
+        fprintf(stderr, "Unsupported input bit depth (%d)\n",
+         avin.video_depth);
+        exit(1);
+      }
+    }
+    di.timebase_numerator = avin.video_fps_n;
+    di.timebase_denominator = avin.video_fps_d;
+    di.frame_duration = 1;
+    di.pixel_aspect_numerator = avin.video_par_n;
+    di.pixel_aspect_denominator = avin.video_par_d;
+    di.nplanes = avin.video_nplanes;
+    memcpy(di.plane_info, avin.video_plane_info,
+     di.nplanes*sizeof(*di.plane_info));
+    di.keyframe_rate = video_keyframe_rate;
+    /*Set up encoder.*/
+    dd = daala_encode_create(&di);
+    daala_encode_ctl(dd, OD_SET_QUANT, &video_q, sizeof(video_q));
+    daala_encode_ctl(dd, OD_SET_COMPLEXITY, &complexity, sizeof(complexity));
+    daala_encode_ctl(dd, OD_SET_MC_CHROMA, &mc_use_chroma,
+     sizeof(mc_use_chroma));
+    daala_encode_ctl(dd, OD_SET_MC_SATD, &mc_use_satd,
+     sizeof(mc_use_satd));
+    daala_encode_ctl(dd, OD_SET_ACTIVITY_MASKING, &use_activity_masking,
+     sizeof(use_activity_masking));
+    daala_encode_ctl(dd, OD_SET_DERING, &use_dering,
+     sizeof(use_dering));
+    daala_encode_ctl(dd, OD_SET_MV_RES_MIN, &mv_res_min, sizeof(mv_res_min));
+    daala_encode_ctl(dd, OD_SET_QM, &qm, sizeof(qm));
+    daala_encode_ctl(dd, OD_SET_MV_LEVEL_MIN, &mv_level_min,
+     sizeof(mv_level_min));
+    daala_encode_ctl(dd, OD_SET_MV_LEVEL_MAX, &mv_level_max,
+     sizeof(mv_level_max));
+    daala_encode_ctl(dd, OD_SET_B_FRAMES, &b_frames, sizeof(b_frames));
+    if (video_r > 0) {
+      /*Account for the Ogg page overhead.
+         This is 1 byte per 255 for lacing values, plus 26 bytes per 4096
+         bytes for the page header, plus approximately 1/2 byte per packet
+         (not accounted for here).*/
+      video_r = (int)(64870*(int64_t)video_r>>16);
+      if (daala_encode_ctl(dd, OD_SET_BITRATE, &video_r, sizeof(video_r)) !=
+        OD_SUCCESS) {
+        fprintf(stderr, "Unable to enable bitrate management.\n");
+        exit(1);
+      }
+    }
+    if (soft_target) {
+      /*Reverse the rate control flags to favor a 'long time' strategy.*/
+      int arg = OD_RATECTL_CAP_UNDERFLOW;
+      if (daala_encode_ctl(dd, OD_SET_RATE_FLAGS, &arg, sizeof(arg)) !=
+       OD_SUCCESS) {
+        fprintf(stderr,"Could not set encoder flags for --soft-target\n");
+        exit(1);
+      }
+      /*Default buffer control is overridden on two-pass.*/
+      if (!twopass && buf_delay < 0) {
+        if ((video_keyframe_rate*7 >> 1) >
+         5*avin.video_fps_n/avin.video_fps_d) {
+          arg = video_keyframe_rate*7 >> 1;
+        }
+        else {
+          arg = 5*avin.video_fps_n/avin.video_fps_d;
+        }
+        if (daala_encode_ctl(dd, OD_SET_RATE_BUFFER, &arg,sizeof(arg)) !=
+         OD_SUCCESS) {
+          fprintf(stderr,
+           "Could not set rate control buffer for --soft-target\n");
+          exit(1);
+        }
+      }
+    }
+    /*Set up two-pass if needed.*/
+    if (passno == 1) {
+      unsigned char *buffer;
+      size_t bytes;
+      ret = daala_encode_ctl(dd, OD_2PASS_OUT, &buffer, sizeof(buffer));
+      if (ret < 0) {
+        fprintf(stderr, "Could not set up the first pass of two-pass mode.\n");
+        fprintf(stderr, "Did you remember to specify an estimated bitrate?\n");
+        exit(1);
+      }
+      bytes = ret;
+      /*Perform a seek test to ensure we can overwrite this placeholder data at
+         the end; this is better than letting the user sit through a whole
+         encode only to find out their pass 1 file is useless at the end.*/
+      if (fseek(twopass_file, 0, SEEK_SET) < 0) {
+        fprintf(stderr, "Unable to seek in two-pass data file.\n");
+        exit(1);
+      }
+      if (fwrite(buffer, 1, bytes, twopass_file) < bytes) {
+        fprintf(stderr, "Unable to write to two-pass data file.\n");
+        exit(1);
+      }
+      fflush(twopass_file);
+    }
+    if (passno == 2) {
+      /*Enable the second pass here.
+        We make this call just to set the encoder into 2-pass mode, because
+         by default enabling two-pass sets the buffer delay to the whole file
+         (because there's no way to explicitly request that behavior).
+        If we waited until we were actually encoding, it would overwite our
+         settings.*/
+      if (daala_encode_ctl(dd, OD_2PASS_IN, NULL, 0) < 0) {
+        fprintf(stderr,
+         "Could not set up the second pass of two-pass mode.\n");
+        exit(1);
+      }
+      if (twopass == 3) {
+        /* 'automatic' second pass */
+        if (fsetpos(avin.video_infile, &video_rewind_pos) < 0) {
+          fprintf(stderr,
+           "Could not rewind video input file for second pass!\n");
+          exit(1);
+        }
+        if (fseek(twopass_file, 0, SEEK_SET) < 0) {
+          fprintf(stderr, "Unable to seek in two-pass data file.\n");
+          exit(1);
+        }
+      }
+    }
+    /*Now we can set the buffer delay if the user requested a non-default
+       value.*/
+    if (passno != 1 && buf_delay >= 0) {
+      if (daala_encode_ctl(dd,OD_SET_RATE_BUFFER, &buf_delay,
+       sizeof(buf_delay)) != OD_SUCCESS) {
+        fprintf(stderr,"Warning: could not set desired buffer delay.\n");
+      }
+    }
+    /*Write the bitstream header packets with proper page interleave.*/
+    /*The first packet for each logical stream will get its own page
+      automatically.*/
+    if (daala_encode_flush_header(dd, &dc, &dp) <= 0) {
       fprintf(stderr, "Internal Daala library error.\n");
       exit(1);
     }
-    else if (!ret) break;
-    daala_to_ogg_packet(&op, &dp);
-    ogg_stream_packetin(&vo, &op);
-  }
-  for (;;) {
-    ret = ogg_stream_flush(&vo, &og);
-    if (ret < 0) {
-      fprintf(stderr, "Internal Ogg library error.\n");
-      exit(1);
+    if (passno != 1) {
+      daala_to_ogg_packet(&op, &dp);
+      ogg_stream_packetin(&vo, &op);
+      if (ogg_stream_pageout(&vo, &og) != 1) {
+        fprintf(stderr, "Internal Ogg library error.\n");
+        exit(1);
+      }
+      if (fwrite(og.header, 1, og.header_len, outfile) <
+       (size_t)og.header_len) {
+        fprintf(stderr, "Could not complete write to file.\n");
+        exit(1);
+      }
+      if (fwrite(og.body, 1, og.body_len, outfile) < (size_t)og.body_len) {
+        fprintf(stderr, "Could not complete write to file.\n");
+        exit(1);
+      }
     }
-    else if (!ret) break;
-    if (fwrite(og.header, 1, og.header_len, outfile) < (size_t)og.header_len) {
-      fprintf(stderr, "Could not write header to file.\n");
-      exit(1);
+    /*Create and buffer the remaining Daala headers.*/
+    for (;;) {
+      ret = daala_encode_flush_header(dd, &dc, &dp);
+      if (ret < 0) {
+        fprintf(stderr, "Internal Daala library error.\n");
+        exit(1);
+      }
+      else if (!ret) break;
+      if (passno != 1){
+        daala_to_ogg_packet(&op, &dp);
+        ogg_stream_packetin(&vo, &op);
+      }
     }
-    if (fwrite(og.body, 1, og.body_len, outfile) < (size_t)og.body_len) {
-      fprintf(stderr, "Could not write body to file.\n");
-      exit(1);
+    if (passno != 1){
+      for (;;) {
+        ret = ogg_stream_flush(&vo, &og);
+        if (ret < 0) {
+          fprintf(stderr, "Internal Ogg library error.\n");
+          exit(1);
+        }
+        else if (!ret) break;
+        if (fwrite(og.header, 1, og.header_len, outfile) <
+            (size_t)og.header_len) {
+          fprintf(stderr, "Could not write header to file.\n");
+          exit(1);
+        }
+        if (fwrite(og.body, 1, og.body_len, outfile) < (size_t)og.body_len) {
+          fprintf(stderr, "Could not write body to file.\n");
+          exit(1);
+        }
+      }
     }
-  }
-  /*Setup complete.
-     Main compression loop.*/
-  fprintf(stderr, "Compressing...\n");
-  video_ready = 0;
-  t0 = clock();
-  for (;;) {
-    ogg_page video_page;
-    double video_time;
-    double video_fps = avin.video_fps_n/avin.video_fps_d;
-    size_t bytes_written;
-    video_ready = fetch_and_process_video(&avin, &video_page, &vo,
-     dd, video_ready, limit > -1 ? &limit : NULL, skip > 0 ? &skip : NULL);
-    /*TODO: Fetch the next video page.*/
-    /*If no more pages are available, we've hit the end of the stream.*/
-    if (!video_ready) break;
-    video_time = daala_granule_time(dd, ogg_page_granulepos(&video_page));
-    bytes_written =
-     fwrite(video_page.header, 1, video_page.header_len, outfile);
-    if (bytes_written < (size_t)video_page.header_len) {
-      fprintf(stderr, "Could not write page header to file.\n");
-      exit(1);
+    /*Setup complete.
+      Main compression loop.*/
+    switch (passno) {
+      case 0: case 2: {
+        fprintf(stderr,"Compressing...\n");
+        break;
+      }
+      case 1: {
+        fprintf(stderr,"Scanning first pass...\n");
+        break;
+      }
     }
-    video_bytesout += bytes_written;
-    bytes_written = fwrite(video_page.body, 1, video_page.body_len, outfile);
-    if (bytes_written < (size_t)video_page.body_len) {
-      fprintf(stderr, "Could not write page body to file.\n");
-      exit(1);
-    }
-    fflush(outfile);
-    video_bytesout += bytes_written;
     video_ready = 0;
-    if (video_time == -1) continue;
-    video_kbps = video_bytesout*8*0.001/video_time;
-    time_base = video_time;
-    current_frame_no = time_base*video_fps;
-    if (interactive) {
-      fprintf(stderr, "\r");
+    t0 = clock();
+    for (;;) {
+      ogg_page video_page;
+      double video_time;
+      double video_fps = avin.video_fps_n/avin.video_fps_d;
+      size_t bytes_written;
+      /*Fetch the next video page.*/
+      video_ready = fetch_and_process_video(&avin, &video_page, &vo,
+       dd, video_ready, limit > -1 ? &limit : NULL, skip > 0 ? &skip : NULL,
+       twopass, twopass_file);
+      /*If no more pages are available, we've hit the end of the stream.*/
+      if (!video_ready) break;
+      video_time = daala_granule_time(dd, ogg_page_granulepos(&video_page));
+      if (passno != 1){
+        bytes_written =
+         fwrite(video_page.header, 1, video_page.header_len, outfile);
+        if (bytes_written < (size_t)video_page.header_len) {
+          fprintf(stderr, "Could not write page header to file.\n");
+          exit(1);
+        }
+        video_bytesout += bytes_written;
+        bytes_written =
+         fwrite(video_page.body, 1, video_page.body_len, outfile);
+        if (bytes_written < (size_t)video_page.body_len) {
+          fprintf(stderr, "Could not write page body to file.\n");
+          exit(1);
+        }
+        fflush(outfile);
+        video_bytesout += bytes_written;
+      }
+      video_ready = 0;
+      if (video_time == -1) continue;
+      time_base = video_time;
+      current_frame_no = time_base*video_fps;
+      if (interactive) {
+        fprintf(stderr, "\r");
+      }
+      else {
+        fprintf(stderr, "\n");
+      }
+      t1 = clock();
+      time_spent = (double)(t1 - t0)/CLOCKS_PER_SEC;
+      if (passno != 1) {
+        video_kbps = video_bytesout*8*0.001/video_time;
+        fprintf(stderr,
+         "     %i:%02i:%02i.%02i video: %0.0fkbps - Frame %i "
+         "- %0.2f FPS - %0.2f FPM     ",
+         (int)time_base/3600, ((int)time_base/60)%60, (int)time_base % 60,
+         (int)(time_base*100 - (long)time_base*100), video_kbps,
+         current_frame_no, current_frame_no/time_spent,
+         current_frame_no/time_spent*60);
+      }
+      else{
+        fprintf(stderr,
+                "     %i:%02i:%02i.%02i video: Frame %i "
+                "- %0.2f FPS - %0.2f FPM     ",
+         (int)time_base/3600, ((int)time_base/60)%60, (int)time_base % 60,
+         (int)(time_base*100 - (long)time_base*100),
+         current_frame_no, current_frame_no/time_spent,
+         current_frame_no/time_spent*60);
+      }
     }
-    else {
-      fprintf(stderr, "\n");
-    }
-    t1 = clock();
-    time_spent = (double)(t1 - t0)/CLOCKS_PER_SEC;
-    fprintf(stderr,
-     "     %i:%02i:%02i.%02i video: %0.0fkbps - Frame %i - %0.2f FPS - %0.2f FPM     ",
-     (int)time_base/3600, ((int)time_base/60)%60, (int)time_base % 60,
-     (int)(time_base*100 - (long)time_base*100), video_kbps, current_frame_no,
-     (current_frame_no)/time_spent,
-     (current_frame_no)/time_spent*60);
+    daala_encode_free(dd);
   }
+
   ogg_stream_clear(&vo);
-  daala_encode_free(dd);
   daala_comment_clear(&dc);
+
   for (pli = 0; pli < avin.video_img.nplanes; pli++) {
     _ogg_free(avin.video_img.planes[pli].data);
   }
   if (outfile != NULL && outfile != stdout) fclose(outfile);
+  if (twopass_file) fclose (twopass_file);
   fprintf(stderr, "\r    \ndone.\n\r");
   if (avin.video_infile != NULL && avin.video_infile != stdin) {
     fclose(avin.video_infile);
