@@ -576,6 +576,48 @@ int fetch_and_process_video(av_input *avin, ogg_page *page,
         }
       }
     }
+    /*In two-pass mode's second pass, we need to submit first-pass
+      data before submitting the img to the encoder.*/
+    if(passno==2){
+      for(;;){
+        static unsigned char buffer[80];
+        static int buf_pos;
+        /*Ask the encoder how many bytes it would like by submitting the
+           OD_2PASS_IN ctl with a null buffer.*/
+        ret = daala_encode_ctl(dd, OD_2PASS_IN, NULL, 0);
+        if (ret < 0) {
+          fprintf(stderr, "Error submitting pass data in second pass.\n");
+          exit(1);
+        }
+        /*If the encoder says it's got enough, stop.*/
+        if (ret == 0) break;
+        /*Otherwise, read in some more bytes.*/
+        if (ret > 80 - buf_pos) {
+          ret = 80 - buf_pos;
+        }
+        bytes = ret;
+        if (bytes > 0 &&
+            fread(buffer + buf_pos, 1, bytes, twopass_file) < bytes) {
+          fprintf(stderr,
+           "Could not read frame data from two-pass data file!\n");
+          exit(1);
+        }
+        /*And pass them in.*/
+        ret = daala_encode_ctl(dd, OD_2PASS_IN, buffer, bytes);
+        if (ret < 0) {
+          fprintf(stderr, "Error submitting pass data in second pass.\n");
+          exit(1);
+        }
+        /*If the encoder consumed the whole buffer, reset it.*/
+        if (ret >= (int)bytes) {
+          buf_pos=0;
+        }
+        else {
+          /*Otherwise remember how much it used.*/
+          buf_pos += ret;
+        }
+      }
+    }
     /*Submit the current frame for encoding.*/
     daala_encode_img_in(dd, &avin->video_img, 0, end_of_input,
      &input_frames_left_encoder_buffer);
