@@ -59,6 +59,9 @@ typedef struct od_rc_state od_rc_state;
    refinement.*/
 # define OD_MC_SQUARE_SUBPEL_REFINEMENT_COMPLEXITY (10)
 
+/*qi boost to apply to keyframes and golden frames.*/
+#define KEYFRAME_CQ_BOOST (3)
+
 struct od_enc_opt_vtbl {
   int32_t (*mc_compute_sad_4x4)(const unsigned char *src,
    int systride, const unsigned char *ref, int dystride);
@@ -115,7 +118,7 @@ struct daala_enc_ctx{
   oggbyte_buffer obb;
   od_ec_enc ec;
   int packet_state;
-  int quality[OD_NPLANES_MAX];
+  int quality;
   int complexity;
   int use_activity_masking;
   int use_dering;
@@ -123,6 +126,21 @@ struct daala_enc_ctx{
   int qm;
   int use_haar_wavelet;
   int b_frames;
+  /*The quantizer value we wish we could use if we were able to
+     code any possible quantizer value to the stream.
+    This value is not used in any quantization, but it is used to
+     compute lambda values for RDO decisions.*/
+  int target_quantizer;
+  /*Motion estimation rdo lambda.*/
+  int mv_rdo_lambda;
+  /*The blocksize RDO lambda.*/
+  double bs_rdo_lambda;
+  /*The PVQ RDO lambda is used for RDO calculations involving unquantized
+     data.*/
+  double pvq_rdo_lambda;
+  /*Normalized PVQ lambda for use where we've already performed
+     quantization.*/
+  double pvq_norm_lambda;
   od_mv_est_ctx *mvest;
   od_params_ctx params;
 #if defined(OD_ENCODER_CHECK)
@@ -212,6 +230,8 @@ void od_mv_est(od_mv_est_ctx *est, int lambda);
 int od_enc_rc_init(od_enc_ctx *enc, long bitrate);
 int od_enc_rc_resize(od_enc_ctx *enc);
 void od_enc_rc_clear(od_enc_ctx *enc);
+void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
+ int is_keyframe, int is_golden_frame, int frame_type);
 int od_enc_rc_2pass_out(od_enc_ctx *enc, unsigned char **buf);
 int od_enc_rc_2pass_in(od_enc_ctx *enc, unsigned char *buf, size_t bytes);
 
