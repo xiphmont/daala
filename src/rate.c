@@ -126,6 +126,12 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
    (enc->state.quantizer*enc->state.quantizer);
 }
 
+int od_enc_rc_update_state(od_enc_ctx *enc, long bits,
+ int frame_type, int droppable) {
+  /* Stub to establish API */
+  return 0;
+}
+
 int od_enc_rc_2pass_out(od_enc_ctx *enc, unsigned char **buf) {
   if (enc->rc.target_bitrate <= 0 ||
    (enc->state.cur_time >=0 && enc->rc.twopass != 1)) {

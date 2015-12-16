@@ -398,6 +398,7 @@ static int od_enc_init(od_enc_ctx *enc, const daala_info *info) {
   if (OD_UNLIKELY(enc->bsize_dist_file == NULL)) {
     return OD_EFAULT;
   }
+  od_enc_rc_init(enc);
 #endif
   return 0;
 }
@@ -2901,6 +2902,17 @@ static int od_enc_determine_frame_type(daala_enc_ctx *enc) {
   return frame_type;
 }
 
+static void od_enc_drop_frame(daala_enc_ctx *enc){
+  /*Use the previous frame's reconstruction image.*/
+  od_img_copy(enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF],
+   enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_PREV]);
+  /*Zero the MV state.*/
+  od_zero_2d((void **)enc->state.mv_grid, enc->state.nvmvbs + 1,
+   enc->state.nhmvbs + 1, sizeof(**enc->state.mv_grid));
+  /*Clear encoder state so that we emit a nil packet*/
+  od_ec_enc_reset(&enc->ec);
+}
+
 int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
  int end_of_input, int *input_frames_left_encoder_buffer) {
   int refi;
@@ -3106,8 +3118,38 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
     else od_split_superblocks(enc, mbctx.is_keyframe);
   }
   od_encode_coefficients(enc, &mbctx, OD_ENCODE_REAL);
+  /*Perform rate mangement update here before we flush anything to output
+     buffers.
+    We may need to press the panic button and drop the frame to avoid busting
+     rate budget constraints.*/
+  if (enc->rc.target_bitrate > 0) {
+    /*Right now, droppability is computed very simply.
+      If we're using B frames, only B frames are droppable.
+      If we're using only I and P frames, only P frames are droppable.
+      Eventually this should be smarter and both allow dropping anything not
+       used as a reference, as well as references + dependent frames when
+       needed.*/
+    int droppable;
+    droppable = 0;
+    if (enc->b_frames > 0) {
+      if (frame_type == OD_B_FRAME) {
+        droppable = 1;
+      }
+    }
+    else{
+      if (frame_type == OD_P_FRAME) {
+        droppable = 1;
+      }
+    }
+    if (od_enc_rc_update_state(enc, od_ec_enc_tell(&enc->ec), frame_type,
+     droppable)) {
+      /*Nonzero return indicates we busted budget on a droppable frame.*/
+      od_enc_drop_frame (enc);
+    }
+  }
   enc->packet_state = OD_PACKET_READY;
   ref_img = enc->state.ref_imgs + enc->state.ref_imgi[OD_FRAME_SELF];
+  /* B-frames can't be references, so there's no point edge-extending them.*/
   if (frame_type != OD_B_FRAME) {
     OD_ASSERT(ref_img);
     od_img_edge_ext(ref_img);
