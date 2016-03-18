@@ -298,6 +298,57 @@ static int od_input_queue_add(od_input_queue *in, daala_image *img,
   return OD_SUCCESS;
 }
 
+/*Closed form version of frame determination code.
+  Used by rate control to predict frame types and subtypes into the future.
+  No side effects, may be called any number of times.*/
+int od_frame_type(daala_enc_ctx *enc, int64_t coding_frame_count,
+                  int *is_golden, int64_t *ip_count){
+  int frame_type;
+  if (coding_frame_count == 0) {
+    *is_golden = 1;
+    *ip_count = 0;
+    frame_type = OD_I_FRAME;
+  }
+  else {
+    int keyrate = enc->input_queue.keyframe_rate;
+    if (enc->input_queue.closed_gop) {
+      int ip_per_gop;
+      int gop_n;
+      int gop_i;
+      ip_per_gop = (keyrate + enc->frame_delay - 2)/enc->frame_delay + 1;
+      gop_n = coding_frame_count/keyrate;
+      gop_i = coding_frame_count - gop_n*keyrate;
+      *ip_count = gop_n * ip_per_gop + (gop_i > 0) +
+       (gop_i + enc->frame_delay - 2)/enc->frame_delay;
+      frame_type = gop_i == 0 ? OD_I_FRAME :
+        (gop_i - 1) % enc->frame_delay == 0 ? OD_P_FRAME : OD_B_FRAME;
+    }
+    else {
+      int ip_per_gop;
+      int gop_n;
+      int gop_i;
+      ip_per_gop = (keyrate + enc->frame_delay - 1)/enc->frame_delay;
+      gop_n = (coding_frame_count - 1)/keyrate;
+      gop_i = coding_frame_count - gop_n*keyrate - 1;
+      *ip_count = (coding_frame_count > 0) + gop_n * ip_per_gop +
+       (gop_i + enc->frame_delay - 1)/enc->frame_delay;
+      frame_type = coding_frame_count == 0 ? OD_I_FRAME :
+       gop_i % enc->frame_delay != 0 ? OD_B_FRAME :
+       gop_i / enc->frame_delay < ip_per_gop-1 ? OD_P_FRAME : OD_I_FRAME;
+      /*One pseudo-non-closed-form caveat:
+        Once we've seen end-of-input, the batched frame determination code
+         suppresses the last open-GOP's I-frame (since it would only be
+         useful for the next GOP, which doesn't exist).
+        Handle that case here.*/
+      if(frame_type == OD_I_FRAME &&
+       enc->input_queue.end_of_input &&
+       enc->input_queue.input_size == 0)
+        frame_type = OD_P_FRAME;
+    }
+  }
+  return frame_type;
+}
+
 void od_input_queue_batch(od_input_queue *in, int frames) {
   od_input_frame frame;
   int i;
