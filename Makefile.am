@@ -88,7 +88,6 @@ src_libdaalabase_la_SOURCES = \
 	src/pvq.c \
 	src/pvq_decoder.c \
 	src/quantizer.c \
-	src/rate.c \
 	src/state.c \
 	src/switch_table.c \
 	src/tf.c \
@@ -128,7 +127,8 @@ src_libdaalaenc_la_SOURCES = \
 	src/infoenc.c \
 	src/laplace_encoder.c \
 	src/mcenc.c \
-	src/pvq_encoder.c
+	src/pvq_encoder.c \
+	src/rate.c
 if ENABLE_X86ASM
 src_libdaalaenc_la_SOURCES += \
         src/x86/x86enc.c \

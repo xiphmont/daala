@@ -63,6 +63,10 @@ extern const int OD_HAAR_QM[2][OD_LOG_BSIZE_MAX];
 # define OD_P_FRAME (1)
 # define OD_B_FRAME (2)
 
+/*Frame subtypes that need to be tracked separately by rate control.
+  Keep these contiguous with but past the end of the main frame types above.*/
+# define OD_GOLDEN_P_FRAME (3)
+
 /*Prediction modes.*/
 # define OD_FORWARD_PRED (1)
 # define OD_BACKWARD_PRED (2)

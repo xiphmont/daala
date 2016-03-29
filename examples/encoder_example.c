@@ -1151,6 +1151,10 @@ int main(int argc, char **argv) {
     di.keyframe_rate = video_keyframe_rate;
     /*Set up encoder.*/
     dd = daala_encode_create(&di);
+    if (!dd) {
+      fprintf(stderr, "Unable to allocate daala encoder.\n");
+      exit(1);
+    }
     daala_encode_ctl(dd, OD_SET_QUANT, &video_q, sizeof(video_q));
     daala_encode_ctl(dd, OD_SET_COMPLEXITY, &complexity, sizeof(complexity));
     daala_encode_ctl(dd, OD_SET_MC_CHROMA, &mc_use_chroma,

@@ -30,6 +30,7 @@ typedef struct od_params_ctx od_params_ctx;
 typedef struct od_mv_est_ctx od_mv_est_ctx;
 typedef struct od_enc_opt_vtbl od_enc_opt_vtbl;
 typedef struct od_rollback_buffer od_rollback_buffer;
+typedef struct od_iir_filter od_iir_filter;
 typedef struct od_rc_state od_rc_state;
 
 # include "../include/daala/daaladec.h"
@@ -93,23 +94,65 @@ struct od_params_ctx {
   int mv_level_max;
 };
 
+/*A 2nd order low-pass Bessel follower.
+  We use this for rate control because it has fast reaction time, but is
+   critically damped.*/
+struct od_iir_filter{
+  int32_t c[2];
+  int64_t g;
+  int32_t x[2];
+  int32_t y[2];
+};
+
 /*Rate control setup and working state information.*/
 struct od_rc_state {
   /*The target bit-rate in bits per second.*/
   long target_bitrate;
-  /*The number of frames to distribute the buffer usage over.*/
-  int buf_delay;
+  /*The number of frames over which to distribute the reservoir usage.*/
+  int reservoir_frames;
   /*Will we drop frames to meet bitrate target?*/
   unsigned char drop_frames;
-  /*Do we respect the maximum buffer fullness?*/
+  /*Do we respect the maximum reservoir fullness?*/
   unsigned char cap_overflow;
   /*Can the reservoir go negative?*/
   unsigned char cap_underflow;
+  /**/
+  int base_quantizer;
   /*Two-pass mode state.
     0 => 1-pass encoding.
     1 => 1st pass of 2-pass encoding.
     2 => 2nd pass of 2-pass encoding.*/
   int twopass;
+  /*The log of the number of pixels in a frame in Q57 format.*/
+  int64_t log_npixels;
+  /*The target average bits per frame.*/
+  int64_t bits_per_frame;
+  /*The current bit reservoir fullness (bits available to be used).*/
+  int64_t reservoir_fullness;
+  /*The target buffer fullness.
+    This is where we'd like to be by the last keyframe the appears in the next
+     buf_delay frames.*/
+  int64_t reservoir_target;
+  /*The maximum buffer fullness (total size of the buffer).*/
+  int64_t reservoir_max;
+  /*The log of estimated scale factor for the rate model in Q57 format.*/
+  int64_t log_scale[4];
+  /*The exponent used in the rate model in Q8 format.*/
+  unsigned exp[4];
+  /*The log of an estimated scale factor used to obtain the real framerate, for
+     VFR sources or, e.g., 12 fps content doubled to 24 fps, etc.*/
+  int64_t log_drop_scale[4];
+  /*The total drop count from the previous frame.*/
+  uint32_t prev_drop_count[4];
+  /*Second-order lowpass filters to track scale and VFR/drops.*/
+  od_iir_filter scalefilter[4];
+  od_iir_filter vfrfilter[4];
+  int frame_count[4];
+  int inter_p_delay;
+  int inter_b_delay;
+  int inter_delay_target;
+  /*The total accumulated estimation bias.*/
+  int64_t rate_bias;
 };
 
 struct daala_enc_ctx{
@@ -183,8 +226,6 @@ struct daala_enc_ctx{
   int frames_in_buff;
   /** Keep the display order of frames in input image buffer. */
   int in_imgs_id[1 + OD_MAX_B_FRAMES];
-  /** Number of I or P frames encoded so far, starting from zero. */
-  unsigned int ip_frame_count;
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)
   unsigned char *output_img_data;
   /** Output images buffer, used as circular queue. */
@@ -227,13 +268,16 @@ od_mv_est_ctx *od_mv_est_alloc(od_enc_ctx *enc);
 void od_mv_est_free(od_mv_est_ctx *est);
 void od_mv_est(od_mv_est_ctx *est, int lambda);
 
+int od_enc_determine_frame_type(daala_enc_ctx *enc, int64_t frameno,
+ int *is_golden_frame);
+
 int od_enc_rc_init(od_enc_ctx *enc, long bitrate);
 int od_enc_rc_resize(od_enc_ctx *enc);
 void od_enc_rc_clear(od_enc_ctx *enc);
 void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
- int is_keyframe, int is_golden_frame, int frame_type);
+ int is_golden_frame, int frame_type);
 int od_enc_rc_update_state(od_enc_ctx *enc, long bits,
- int frame_type, int droppable);
+ int is_golden_frame, int frame_type, int droppable);
 int od_enc_rc_2pass_out(od_enc_ctx *enc, unsigned char **buf);
 int od_enc_rc_2pass_in(od_enc_ctx *enc, unsigned char *buf, size_t bytes);
 

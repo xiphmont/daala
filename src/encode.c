@@ -221,7 +221,7 @@ static int od_enc_init(od_enc_ctx *enc, const daala_info *info) {
   oggbyte_writeinit(&enc->obb);
   od_ec_enc_init(&enc->ec, 65025);
   enc->packet_state = OD_PACKET_INFO_HDR;
-  enc->quality = 10;
+  enc->quality = -1;
   enc->complexity = 7;
   enc->use_activity_masking = 1;
   enc->qm = OD_HVS_QM;
@@ -375,7 +375,6 @@ static int od_enc_init(od_enc_ctx *enc, const daala_info *info) {
   enc->frames_in_buff = 0;
   enc->enc_order_count = 0;
   enc->display_order_count = 0;
-  enc->ip_frame_count = 0;
   for (i = 0; i < 1 + OD_MAX_B_FRAMES; i++) {
     enc->in_imgs_id[i] = -1;
   }
@@ -417,7 +416,7 @@ static void od_enc_clear(od_enc_ctx *enc) {
 daala_enc_ctx *daala_encode_create(const daala_info *info) {
   od_enc_ctx *enc;
   if (info == NULL) return NULL;
-  enc = (od_enc_ctx *)malloc(sizeof(*enc));
+  enc = (od_enc_ctx *)calloc(1,sizeof(*enc));
   if (od_enc_init(enc, info) < 0) {
     free(enc);
     return NULL;
@@ -617,9 +616,9 @@ int daala_encode_ctl(daala_enc_ctx *enc, int req, void *buf, size_t buf_sz) {
         return OD_EINVAL;
       }
       set = *(int *)buf;
-      enc->rc.buf_delay = set;
+      enc->rc.reservoir_frames = set;
       od_enc_rc_resize(enc);
-      *(int *)buf = enc->rc.buf_delay;
+      *(int *)buf = enc->rc.reservoir_frames;
       return OD_SUCCESS;
     }
     case OD_2PASS_OUT:
@@ -2869,37 +2868,66 @@ static void od_enc_push_input_buff_tail(daala_enc_ctx *enc, od_img *img) {
   od_img_copy_pad(enc, img);
 }
 
-/*As an example, if # of B frames = 2,
-   assume encoding order is : I0 P1 B2 B3 P4 B5 B6 P7 ...*/
-/*Note: Must be called ONCE and ONLY ONCE before encoding each frame.*/
-static int od_enc_determine_frame_type(daala_enc_ctx *enc) {
-  int frame_type;
+/*Centralize frame type determination; call before encoding a frame.
+  Given an encoder context and frame number in encoding order, return
+   the type of that frame.
+  It has no side effects, is closed-form, and may be called more than once.*/
+int od_enc_determine_frame_type(daala_enc_ctx *enc, int64_t frameno,
+ int *is_golden) {
+  od_state *state;
+  int gop_n;
   int idx_in_gop;
   int idx_in_pbb;
-  od_state *state;
+  int64_t ip_count;
   state = &enc->state;
-  idx_in_gop = enc->enc_order_count % state->info.keyframe_rate;
-  /* Not the 1st frame?*/
-  if (enc->enc_order_count != 0) {
-    idx_in_pbb = (idx_in_gop - 1) % (enc->b_frames + 1);
-    /*If open GOP with B frames > 0, encoding order and display order of
-       I frame is different (except the 1st I frame),
-       so encoder order with idx_in_gop == 0 means it is B frame
-       and I frame in that case is located b_frames earlier.*/
-    if (((enc->b_frames && !OD_CLOSED_GOP) &&
-     (idx_in_gop == (state->info.keyframe_rate - enc->b_frames))) ||
-     /*Or (if there is no B frame or close GOP), then encoder order with
-       idx_in_gop == 0 means it is I frame.*/
-     ((enc->b_frames == 0 || OD_CLOSED_GOP) && (idx_in_gop == 0)))
-      frame_type = OD_I_FRAME;
-    else if (idx_in_pbb == 0) frame_type = OD_P_FRAME;
-    else frame_type = OD_B_FRAME;
+  gop_n = frameno / state->info.keyframe_rate;
+  idx_in_gop = frameno % state->info.keyframe_rate;
+  idx_in_pbb = (idx_in_gop - 1) % (enc->b_frames + 1);
+  ip_count = (state->info.keyframe_rate + enc->b_frames - 1)/
+   (enc->b_frames + 1)*gop_n +
+   (idx_in_gop + enc->b_frames-1)/(enc->b_frames + 1);
+  /*The golden frame calculation below is equivalent to the original
+     non-closed-form counted solution.
+    That complexity may not be worth it.*/
+#if OD_CLOSED_GOP
+  /*In a closed GOP pattern, every keyframe interval starts with an I-frame,
+    and that's the only I-frame in the interval.*/
+  ip_count += gop_n + (idx_in_gop>0);
+#else
+  /*Only the first interval starts with an I-frame in an open GOP pattern.
+    Each subsequent interval shifts its initial I-frame backwards to the
+     preceeding period into a position [keyframe_rate - b_frames] near
+     the end.
+    Thus, in addition to everything else, the number of I and P frames in each
+     keyframe period also depends on whether or not the shifted I frame
+     displaces a B-frame or another I/P-frame.*/
+  if ((state->info.keyframe_rate - enc->b_frames - 1) % (enc->b_frames + 1)) {
+    /*The I-frame swaps with a B-frame.*/
+    ip_count += gop_n + (frameno>0) +
+     (idx_in_gop > state->info.keyframe_rate - enc->b_frames);
   }
   else {
-    /*1st frame.*/
-    frame_type = OD_I_FRAME;
+    /*The shifted I-frame replaces a P-frame.
+      The space once occupied by the I-frame becomes a B-frame.*/
+    ip_count += (frameno>0);
   }
-  return frame_type;
+#endif
+  *is_golden = ip_count % (OD_GOLDEN_FRAME_INTERVAL/(enc->b_frames + 1)) == 0;
+#if OD_CLOSED_GOP
+  /*First frame of any closed GOP is an I-frame.*/
+  if (idx_in_gop == 0) return OD_I_FRAME;
+#else
+  /* First frame of the stream is always an I-frame.*/
+  if (frameno == 0) return OD_I_FRAME;
+  /*Open GOP shifts position of I-frames in the pattern backward by the
+     number of consecutive B frames in use.
+    If there are no B frames, open and closed GOP are equivalent.*/
+  if (idx_in_gop == (state->info.keyframe_rate - enc->b_frames) %
+   state->info.keyframe_rate) return OD_I_FRAME;
+#endif
+  if (idx_in_pbb == 0) return OD_P_FRAME;
+  *is_golden = 0;
+  return OD_B_FRAME;
 }
 
 static void od_enc_drop_frame(daala_enc_ctx *enc){
@@ -2975,8 +3003,15 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
       return OD_EINVAL;
     }
   }
-  /*Determine a frame type.*/
-  frame_type = od_enc_determine_frame_type(enc);
+  /*Determine a frame type.
+    This is now calculated closed-form in one and only one place
+     (od_enc_determine_frame_type) as rate control also needs to robustly
+     determine frame type into the future.*/
+  frame_type = od_enc_determine_frame_type(enc, enc->enc_order_count,
+   &mbctx.is_golden_frame);
+  enc->state.frame_type = frame_type;
+  mbctx.frame_type = frame_type;
+  mbctx.is_keyframe = frame_type == OD_I_FRAME;
   /*If P frame or I with open GOP, the input frame is at the tail of
     input frame buffer, otherwise input frame is at the head.*/
   if (enc->b_frames > 0) {
@@ -2992,15 +3027,6 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
     enc->frames_in_buff -= 1;
   }
   enc->curr_display_order = enc->in_imgs_id[enc->curr_frame];
-  /* Check if the frame should be a keyframe. */
-  mbctx.is_keyframe = (frame_type == OD_I_FRAME) ? 1 : 0;
-  /* B-frame cannot be a Golden frame.*/
-  mbctx.is_golden_frame = (enc->ip_frame_count %
-   (OD_GOLDEN_FRAME_INTERVAL/(enc->b_frames + 1)) == 0)
-   && (frame_type != OD_B_FRAME) ? 1 : 0;
-  if (enc->state.ref_imgi[OD_FRAME_GOLD] < 0) {
-    mbctx.is_golden_frame = 1;
-  }
   /*Update the reference buffer state.*/
   if (enc->b_frames != 0 && frame_type == OD_P_FRAME) {
     enc->state.ref_imgi[OD_FRAME_PREV] =
@@ -3018,18 +3044,14 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
    || refi == enc->state.ref_imgi[OD_FRAME_PREV]
    || refi == enc->state.ref_imgi[OD_FRAME_NEXT]; refi++);
   enc->state.ref_imgi[OD_FRAME_SELF] = refi;
-  /*We must be a keyframe if we don't have a reference.*/
-  if (enc->state.ref_imgi[OD_FRAME_PREV] < 0) {
-    mbctx.is_keyframe = 1;
-    frame_type = OD_I_FRAME;
-  }
+  /*It's an error if we're not a keyframe and don't have a reference.*/
+  OD_ASSERT(frame_type == OD_I_FRAME ||
+   enc->state.ref_imgi[OD_FRAME_PREV] >= 0);
 #if defined(OD_DUMP_IMAGES) || defined(OD_DUMP_RECONS)
   enc->curr_dec_frame = od_state_push_output_buff_tail(&enc->state);
   /*Let output buffer know which input frame in display order it was.*/
   enc->out_imgs_id[enc->curr_dec_frame] = enc->curr_display_order;
 #endif
-  mbctx.frame_type = frame_type;
-  enc->state.frame_type = frame_type;
   /*TODO : Try golden frame as additional reference to
      the forward prediction of B-frame.*/
   mbctx.num_refs = (frame_type != OD_I_FRAME) ? OD_MAX_CODED_REFS : 0;
@@ -3068,8 +3090,9 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
     Keep them all in one place (in the rate control code, even if rate
      control isn't active) so that calculations aren't duplicated in
      multiple places that drift apart.*/
-  od_enc_rc_select_quantizers_and_lambdas(enc, mbctx.is_keyframe,
-   mbctx.is_golden_frame, frame_type);
+  od_enc_rc_select_quantizers_and_lambdas(enc, mbctx.is_golden_frame,
+   mbctx.frame_type);
+  /*Interpolate and signal quantizer adjustment matrices.*/
   if (mbctx.is_keyframe) {
     for (pli = 0; pli < nplanes; pli++) {
       int i;
@@ -3141,8 +3164,8 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
         droppable = 1;
       }
     }
-    if (od_enc_rc_update_state(enc, od_ec_enc_tell(&enc->ec), frame_type,
-     droppable)) {
+    if (od_enc_rc_update_state(enc, od_ec_enc_tell(&enc->ec),
+     mbctx.is_golden_frame, frame_type, droppable)) {
       /*Nonzero return indicates we busted budget on a droppable frame.*/
       od_enc_drop_frame (enc);
     }
@@ -3244,9 +3267,6 @@ int daala_encode_img_in(daala_enc_ctx *enc, od_img *img, int duration,
   OD_ASSERT(mbctx.is_keyframe == (frame_type == OD_I_FRAME));
   enc->in_imgs_id[enc->curr_frame] = -1;
   ++enc->enc_order_count;
-  if (frame_type == OD_I_FRAME || frame_type == OD_P_FRAME) {
-    ++enc->ip_frame_count;
-  }
   return 0;
 }
 
