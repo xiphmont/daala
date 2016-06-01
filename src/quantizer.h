@@ -26,6 +26,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #if !defined(_quantizer_H)
 # define _quantizer_H (1)
 
+#define OD_LOG_QUANTIZER_STEP_Q57 (0x00512CDA9165FB2ALL)
+
 extern const int OD_N_CODED_QUANTIZERS;
 int od_quantizer_to_codedquantizer(int q);
 int od_codedquantizer_to_quantizer(int cq);
