@@ -342,11 +342,11 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
     /*Get the log2 quantizer in Q57 (normalized for coefficient shift).*/
     log_quantizer = od_blog64(enc->rc.base_quantizer)-OD_Q57(OD_COEFF_SHIFT);
     /*log_quantizer to Q21.*/
-    log_quantizer >>= 36;
+    log_quantizer = (log_quantizer + (1LL << 36 >> 1)) >> 36;
     /*scale log quantizer, result is Q33.*/
     log_quantizer *= OD_LOG_QUANTIZER_BASE_Q12;
     /* Add Q33 ofset to Q33 log_quantizer*/
-    log_quantizer += OD_LOG_QUANTIZER_OFFSET_Q45 >> 12;
+    log_quantizer += (OD_LOG_QUANTIZER_OFFSET_Q45 + (1 << 12 >> 1)) >> 12;
     /*Modulate quantizer according to frame type; result is Q45.*/
     log_quantizer *= mqp[frame_subtype];
     /*Add Q45 boost/cut to Q45 fractional coded quantizer.*/
@@ -366,7 +366,8 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
     log_quantizer *= mqp[frame_subtype];
     log_quantizer += dqp[frame_subtype];
     enc->state.coded_quantizer =
-     OD_CLAMPI(1, log_quantizer >> 45, OD_N_CODED_QUANTIZERS);
+      OD_CLAMPI(1, (log_quantizer + (1LL << 45 >> 1)) >> 45,
+     OD_N_CODED_QUANTIZERS);
     enc->state.quantizer =
      od_codedquantizer_to_quantizer(enc->state.coded_quantizer);
   }
