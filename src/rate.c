@@ -33,6 +33,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include "quantizer.h"
 
 #define OD_Q57(v) ((int64_t)(v) << 57)
+#define OD_F_Q45(v) ((int64_t)(((v)*((int64_t)1 << 45))))
+#define OD_F_Q12(v) ((int32_t)(((v)*((int32_t)1 << 12))))
 
 static const int64_t OD_ATANH_LOG2[32]={
   0x32B803473F7AD0F4LL,0x2F2A71BD4E25E916LL,0x2E68B244BB93BA06LL,
@@ -303,8 +305,8 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
     int frame_subtype;
     int lossy_quantizer_min;
     int lossy_quantizer_max;
-    float mqp[OD_FRAME_SUBTYPES];
-    float dqp[OD_FRAME_SUBTYPES];
+    int32_t mqp[OD_FRAME_SUBTYPES];
+    int64_t dqp[OD_FRAME_SUBTYPES];
     /*Quantizer selection sticks to the codable, lossy portion of the quantizer
        range.*/
     lossy_quantizer_min =
@@ -317,14 +319,14 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
     frame_subtype = is_golden_frame && frame_type == OD_P_FRAME ?
       OD_GOLDEN_P_FRAME : frame_type;
     /*Stash quantizer modulation by frame type.*/
-    mqp[OD_I_FRAME] = OD_MQP_I;
-    mqp[OD_P_FRAME] = OD_MQP_P;
-    mqp[OD_B_FRAME] = OD_MQP_B;
-    mqp[OD_GOLDEN_P_FRAME] = OD_MQP_I;
-    dqp[OD_I_FRAME] = OD_DQP_I;
-    dqp[OD_P_FRAME] = OD_DQP_P;
-    dqp[OD_B_FRAME] = OD_DQP_B;
-    dqp[OD_GOLDEN_P_FRAME] = OD_DQP_I;
+    mqp[OD_I_FRAME] = OD_F_Q12(OD_MQP_I);
+    mqp[OD_P_FRAME] = OD_F_Q12(OD_MQP_P);
+    mqp[OD_B_FRAME] = OD_F_Q12(OD_MQP_B);
+    mqp[OD_GOLDEN_P_FRAME] = OD_F_Q12(OD_MQP_I);
+    dqp[OD_I_FRAME] = OD_F_Q45(OD_DQP_I);
+    dqp[OD_P_FRAME] = OD_F_Q45(OD_DQP_P);
+    dqp[OD_B_FRAME] = OD_F_Q45(OD_DQP_B);
+    dqp[OD_GOLDEN_P_FRAME] = OD_F_Q45(OD_DQP_I);
     if(enc->quality == -1){
       /*A quality of -1 means quality was unset; use a default.*/
       enc->rc.base_quantizer = quality_to_quantizer(10);
@@ -332,22 +334,39 @@ void od_enc_rc_select_quantizers_and_lambdas(od_enc_ctx *enc,
     else {
       enc->rc.base_quantizer = quality_to_quantizer(enc->quality);
     }
-    /*Modulate quantizer according to frame type.*/
-    log_quantizer = od_blog64(enc->rc.base_quantizer)*mqp[frame_subtype] +
-      dqp[frame_subtype]*OD_LOG_QUANTIZER_STEP_Q57;
-    /*Temporarily work in Q12 for rounding.*/
-    quantizer = (od_bexp64(log_quantizer+OD_Q57(12)) + (1 << 12 >> 1)) >> 12;
-    /*The coded quantizers are spaced a factor of roughly 1.116161 apart,
-       but are rounded to a nearby (not necessarily closest) integer value
-       (see quantizer.c).
-      Round such that the deltas make the desired changes to the coded
-       quantizer values while getting the change to the target quantizer as
-       close to the ideal ratio as possible.*/
+    /*As originally written, qp modulation is applied to the coded quantizer.
+      Because we now have and use a more precise target quantizer for various
+       calculation, that needs to be modulated as well.
+      Calculate what is, effectively, a fractional coded quantizer. */
+    /*fractional_coded_quantizer ~= log2(quantizer / 16)*6.307 + 6.235.*/
+    /*Get the log2 quantizer in Q57 (normalized for coefficient shift).*/
+    log_quantizer = od_blog64(enc->rc.base_quantizer)-OD_Q57(OD_COEFF_SHIFT);
+    /*log_quantizer to Q21.*/
+    log_quantizer >>= 36;
+    /*scale log quantizer, result is Q33.*/
+    log_quantizer *= OD_LOG_QUANTIZER_BASE_Q12;
+    /* Add Q33 ofset to Q33 log_quantizer*/
+    log_quantizer += OD_LOG_QUANTIZER_OFFSET_Q45 >> 12;
+    /*Modulate quantizer according to frame type; result is Q45.*/
+    log_quantizer *= mqp[frame_subtype];
+    /*Add Q45 boost/cut to Q45 fractional coded quantizer.*/
+    log_quantizer += dqp[frame_subtype];
+    /*Back to log2 quantizer in Q57.*/
+    log_quantizer = (log_quantizer - OD_LOG_QUANTIZER_OFFSET_Q45)*
+     OD_LOG_QUANTIZER_EXP_Q12 + OD_Q57(OD_COEFF_SHIFT);
+    /*Convert Q57 log2 quantizer to unclamped linear target quantizer value.*/
+    quantizer = od_bexp64(log_quantizer);
+    /*Clamp and save target quantizer.*/
     enc->target_quantizer =
      OD_CLAMPI(lossy_quantizer_min, quantizer, lossy_quantizer_max);
+    /*Coded quantizer is modulated independently to preserve the
+       desired, coarser integer rouding behavior.*/
+    log_quantizer =
+      (int64_t)od_quantizer_to_codedquantizer(enc->rc.base_quantizer) << 33;
+    log_quantizer *= mqp[frame_subtype];
+    log_quantizer += dqp[frame_subtype];
     enc->state.coded_quantizer =
-     OD_CLAMPI(1, od_quantizer_to_codedquantizer(quantizer),
-     OD_N_CODED_QUANTIZERS);
+     OD_CLAMPI(1, log_quantizer >> 45, OD_N_CODED_QUANTIZERS);
     enc->state.quantizer =
      od_codedquantizer_to_quantizer(enc->state.coded_quantizer);
   }

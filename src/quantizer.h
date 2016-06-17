@@ -26,7 +26,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #if !defined(_quantizer_H)
 # define _quantizer_H (1)
 
-#define OD_LOG_QUANTIZER_STEP_Q57 (0x00512CDA9165FB2ALL)
+/*Fractional_coded_quantizer ~= log2(quantizer / 16)*6.307 + 6.235*/
+/*Base/scale factor for linear quantizer to fractional coded quantizer
+   conversion (6.307 * 2^12) */
+#define OD_LOG_QUANTIZER_BASE_Q12 (0x0064EB)
+/*Inverse of above scale factor.*/
+#define OD_LOG_QUANTIZER_EXP_Q12 (0x000289)
+/*Offset for linear quantizer to fractional coded quantizer
+   conversion (6.235 * 2^45) */
+#define OD_LOG_QUANTIZER_OFFSET_Q45 (0x0000C7851EB851ECLL)
 
 extern const int OD_N_CODED_QUANTIZERS;
 int od_quantizer_to_codedquantizer(int q);
